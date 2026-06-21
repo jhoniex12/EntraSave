@@ -17,8 +17,7 @@ import { ok, fail, type ActionResult } from '@/utils/result';
 
 /**
  * defineRoute — the single, mandatory pipeline for every mutating/owned API
- * endpoint (docs/ARCHITECTURE.md §8, §2 request flow). This is the Express port
- * of the original Next.js `defineAction`; the chain is byte-for-byte the same:
+ * endpoint. It provides the application's mandatory protected request chain:
  *
  *   raw input (req.body)
  *     → requireAuth        (local JWT session → AuthContext)    §4

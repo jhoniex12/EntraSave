@@ -4,7 +4,7 @@ import { useAuth } from '@/auth/auth-context';
 import { ThemeSelector } from '@/components/theme-selector';
 
 /**
- * Public marketing landing — port of the original FinanceWebsite `app/page.tsx`.
+ * Public EntraSave marketing landing page.
  * Presentation only: no business logic, no data access. Signed-in state comes
  * from the session context (`/me`); Next's `next/link` / `next/image` become
  * react-router `Link` + inline SVG, and the server `readSessionCookie` becomes

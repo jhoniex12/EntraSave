@@ -1,117 +1,77 @@
-# EntraSave — React + Node/Express edition
+# EntraSave
 
-EntraSave is the **React (Vite SPA) + Node/Express (API)** port of the original
-Next.js personal-finance app, against the **same SQL Server database, schema, and
-migrations**. The architecture, security model, RBAC, audit, money handling, and
-all `§N` design references are preserved — only the framework mechanics changed.
+EntraSave is a responsive personal-finance application built with a React/Vite
+client, a Node/Express API, Prisma, and SQL Server.
 
-> Start here: [AGENTS.md](AGENTS.md) · [CODING_STANDARDS.md](CODING_STANDARDS.md)
-> · [SECURITY.md](SECURITY.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-> (read §0a first — the Next.js → React/Express translation table).
+Project guidance:
 
-## Layout
+- [AGENTS.md](AGENTS.md)
+- [CODING_STANDARDS.md](CODING_STANDARDS.md)
+- [SECURITY.md](SECURITY.md)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
-```
-EntraSave/
-  package.json   root runner — `npm run dev` starts API + client together (concurrently)
-  server/        Express API — all business logic, persistence, auth, RBAC, audit
-    src/
-      config/        env, prisma client
-      middleware/    request-context, security headers, error handler
-      routes/        URL wiring (+ index.ts mounts /api); one file per feature
-      controllers/   thin defineRoute handlers (policy + delegate); one per feature
-      services/      business logic; audit.service; one per feature
-      repositories/  repository interface + Prisma adapter (*.prisma.ts); rbac.repository
-      schemas/       Zod input schemas (one per feature)
-      dto/           DTO types + entity→DTO mappers (one per feature)
-      utils/         define-route (the security pipeline), jwt, password, oauth,
-                     session-cookie, require-auth/permission, logger, ratelimit,
-                     errors, money, pagination, currencies, result
-      app.ts, server.ts
-    prisma/      schema.prisma + migrations + seed (copied verbatim from the original)
-  client/        React SPA (Vite + Tailwind) — presentation only, calls the API
-    src/
-      lib/       api client, typed endpoints, DTO types, formatting, theme
-      auth/      session context (/me bootstrap; HttpOnly cookie, no token in JS)
-      components/ layout, modal (portal), auth form, theme toggle
-      pages/     landing, sign-in/up, dashboard, accounts, transactions
-  AGENTS.md, CODING_STANDARDS.md, SECURITY.md, docs/ARCHITECTURE.md
+## Features
+
+- Credential, Google, and Facebook sign-in
+- Account creation, editing, opening balances, archiving, and deletion
+- Income, expense, and transfer transactions
+- Transaction editing, deletion, monthly navigation, and category filtering
+- Manual monthly starting balances
+- Ordered categories and monthly category budgets
+- Near/over-budget alerts
+- Dashboard month/year summaries and current-year trend
+- Profile, currency, and theme preferences
+- Responsive desktop and mobile navigation and dialogs
+
+## Structure
+
+```text
+client/   React 19, React Router, Vite, Tailwind CSS
+server/   Express, Zod, Prisma, SQL Server
+docs/     Architecture documentation
 ```
 
-The server layout follows the same **layer-based** vocabulary as the
-BabyranWebsite project (`routes / controllers / services / utils / config /
-middleware`), extended with `repositories / dto / schemas` for the typed
-Prisma + DTO seams.
+The API is the trust boundary. The client never receives the session JWT and
+does not make authorization decisions.
 
-## How the request flow maps
+## Requirements
 
-```
-React component → fetch POST /api/<feature>/<action> (cookie sent automatically)
-  → *.routes.ts (thin controller) → defineRoute()  // auth → RBAC → rate limit
-      → Zod → ownership → service → repository → Prisma adapter → SQL Server
-  → DTO → ActionResult<T> JSON
-```
+- Node.js 20.11 or newer
+- SQL Server reachable through `DATABASE_URL`
+- A configured `server/.env` based on `server/.env.example`
 
-`defineRoute` (`server/src/http/define-route.ts`) is the exact pipeline of the
-original `defineAction` — same chain, same order, same guarantees.
+## Install and run
 
-## Running locally
+From the repository root:
 
-Prereqs: Node ≥ 20.11, the existing SQL Server database reachable.
-
-**One-command (from the repo root)** — installs both, then runs API + client together:
-```bash
+```powershell
 npm run install:all
-# create server/.env (see step 1 below), then:
-npm run dev                 # API :4000 + client :5173 via concurrently
+npm run prisma:generate --prefix server
+npm run dev
 ```
 
-Or run each app on its own:
+Default development addresses:
 
-**1. API** (`server/`)
-```bash
-cd server
-npm install
-cp .env.example .env        # set DATABASE_URL, JWT_SECRET (≥32 bytes), APP_URL, CLIENT_URL
-npm run prisma:generate     # generate the Prisma client
-# the DB already exists; if starting fresh: npm run prisma:deploy && npm run db:seed
-npm run dev                 # http://localhost:4000
+- Client: http://localhost:5173
+- API: http://localhost:4000
+- Health: http://localhost:4000/health
+
+The Vite development server proxies `/api` to the Express server.
+
+For a new database:
+
+```powershell
+npm run prisma:deploy --prefix server
+npm run db:seed --prefix server
 ```
-
-**2. Client** (`client/`, separate terminal)
-```bash
-cd client
-npm install
-npm run dev                 # http://localhost:5173  (proxies /api → :4000)
-```
-
-Open http://localhost:5173. In dev, the Vite proxy makes the SPA and API
-same-origin, so the `entrasave_session` HttpOnly cookie behaves as same-site. In
-production the two are served same-site behind IIS/Cloudflare and the API runs
-CORS with `credentials: true` against `CLIENT_URL`.
-
-## What was ported verbatim vs. adapted
-
-- **Verbatim** (framework-agnostic): every module's `schema/dto/repository/prisma/
-  service`, the auth/crypto primitives (`jwt`, `password`, `oauth`), RBAC, audit,
-  rate-limiter, logger, errors, Prisma schema + migrations + seed, the Tailwind
-  design system + dark theme.
-- **Adapted to Express/React**: `defineAction` → `defineRoute`; Server Actions →
-  `controllers/*.controller.ts` + `routes/*.routes.ts`; `next/headers`
-  cookies/headers → `req`/`res`; edge middleware → `middleware/` (security
-  headers) + per-route `requireAuth`; Server Components → React pages calling the
-  typed API client; `revalidatePath` → client re-fetch.
 
 ## Verification
 
-```bash
-# server/
-npm run typecheck && npm run lint && npm run build
-# client/
-npm run typecheck && npm run build
+```powershell
+npm run typecheck
+npm run lint
+npm run build
 ```
 
-The full stack has been verified end-to-end against the live database: signup →
-HttpOnly session cookie → `/me` (DB-resolved RBAC) → account creation (Decimal
-money) → lazy default categories → dashboard aggregates, both directly and
-through the Vite dev proxy.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for request flow, domain
+boundaries, and deployment constraints.

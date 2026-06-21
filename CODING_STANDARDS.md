@@ -1,198 +1,201 @@
-# CODING_STANDARDS.md
+# EntraSave Coding Standards
 
-Conventions for writing code in this repository. Pairs with
-[AGENTS.md](AGENTS.md) (architecture rules) and [SECURITY.md](SECURITY.md)
-(security rules). These are about *how the code reads*; those are about *what it
-must do*.
+These standards describe the codebase as it exists today. Architecture rules are
+in [AGENTS.md](AGENTS.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md);
+security rules are in [SECURITY.md](SECURITY.md).
 
-EntraSave is the React + Express port of the original Next.js app; see
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §0a for the framework translation
-table. `server/` is the Express API; `client/` is the React SPA.
+## TypeScript
 
----
+- Keep strict TypeScript enabled in both packages.
+- Do not introduce `any`. Use `unknown` at boundaries and narrow it.
+- Do not use casts to bypass validation. Parse untrusted values with Zod.
+- Handle indexed values that may be `undefined`; avoid non-null assertions.
+- Use `import type` for type-only imports.
+- Use the `@/*` alias inside each package.
+- Type exported functions, DTOs, service methods, and repository contracts.
+  Allow inference for straightforward local values.
+- Prefer discriminated unions for finite state and error/result variants.
 
-## 1. Language & TypeScript
+## Naming and files
 
-- **TypeScript strict** is on, including `noUncheckedIndexedAccess`. Handle the
-  `T | undefined` you get from indexing/`.at()`; don't `!`-assert it away.
-- **No `any`.** Use `unknown` at boundaries and narrow with Zod or type guards.
-- **No `as` to launder untrusted data.** Parse it (Zod) instead. `as const` and
-  narrowing casts for known-safe values are fine.
-- Prefer **`type`** for unions/DTOs, **`interface`** for object contracts that
-  may be implemented (e.g. repositories). Match the surrounding file.
-- Use the `@/*` path alias for in-app imports (`server/src/*` in the API,
-  `client/src/*` in the SPA); no deep relative `../../../`.
-- Functions and exported types are explicitly typed at the boundary; rely on
-  inference for locals.
-
----
-
-## 2. File & naming conventions
-
-| Thing | Convention | Example |
+| Item | Convention | Example |
 |---|---|---|
-| Module files | `kebab.purpose.ts` | `transaction.service.ts` |
-| Service class | `PascalCase` + singleton export | `class AccountService` → `accountService` |
-| Repository interface | `XRepository` | `TransactionRepository` |
-| Prisma adapter | `*.prisma.ts`, class `PrismaXRepository` | `account.prisma.ts` |
-| DTO type / mapper | `XDTO` / `toXDTO()` | `AccountDTO`, `toAccountDTO()` |
-| Zod schema / type | `XSchema` / inferred `XInput` | `CreateAccountSchema`, `CreateAccountInput` |
-| Controller | `controllers/<f>.controller.ts`, exported `defineRoute` handlers | `account.controller.ts` → `createAccount` |
-| Route module | `routes/<f>.routes.ts`, exports `xRoutes` Router | `account.routes.ts` → `accountRoutes` |
-| OAuth provider | lowercase union | `'google' \| 'facebook'` |
-| Auth environment key | provider prefix | `GOOGLE_CLIENT_ID` |
-| Permission key | `resource.verb` | `transactions.write` |
-| React component | `PascalCase.tsx` | `TransactionForm.tsx` |
-| Constants | `SCREAMING_SNAKE_CASE` | `RATE_LIMITS`, `MAX_PAGE_SIZE` |
+| Server module | `<feature>.<layer>.ts` | `transaction.service.ts` |
+| Prisma adapter | `<feature>.prisma.ts` | `account.prisma.ts` |
+| Repository interface | `XRepository` | `BudgetRepository` |
+| Service class/singleton | `XService` / lower camel export | `DashboardService`, `dashboardService` |
+| DTO | `XDTO` | `TransactionDTO` |
+| Zod schema | `XSchema` | `CreateAccountSchema` |
+| React component | PascalCase symbol | `CategorySummary` |
+| Client page file | lowercase kebab case | `manage-account.tsx` |
+| Permission | `resource.verb` | `transactions.write` |
+| Constants | `SCREAMING_SNAKE_CASE` | `ACCOUNT_TYPES` |
 
-The server is **layer-based**: `routes/ controllers/ services/ repositories/
-dto/ schemas/ utils/ config/ middleware/`, one file per feature in each layer.
-One service / one repository per feature. Keep files focused; if a service grows
-past comfortable reading, split by use-case group, not by arbitrary line count.
+Keep one feature per server file and keep page-only components near their page
+until they are reused. Move genuinely shared UI to `client/src/components/`.
 
----
+## Server boundaries
 
-## 3. Server vs client code
+Dependency direction is:
 
-- **The API (`server/`) is the trust boundary.** All auth, authorization,
-  validation, and business logic run there. The React client is never trusted.
-- **Controllers (`controllers/*.controller.ts`) export thin `defineRoute`
-  handlers**; **routes (`routes/*.routes.ts`) only wire URL → controller**. No
-  business logic, no Prisma in either.
-- The client receives **DTOs** as JSON, never Prisma entities or `ctx`.
-- The client never receives JWTs, password hashes, OAuth codes/tokens, provider
-  secrets, or signed OAuth-flow cookie values. The session is an `HttpOnly`
-  cookie sent automatically with `credentials: 'include'`.
-- React components are **presentation + local state**. Data access goes through
-  the typed API client ([client/src/lib/api.ts](client/src/lib/api.ts)); no
-  component talks to `fetch` directly with ad-hoc URLs.
+```text
+routes -> controllers -> services -> repository interfaces -> Prisma adapters
+```
 
----
+- A route file contains Express router wiring only.
+- A controller is a `defineRoute()` declaration: schema, permission,
+  rate-limit key, ownership hook, audit policy, and service call.
+- A service owns domain decisions and coordinates repositories/services.
+- A repository interface accepts scoped identifiers and returns minimal records.
+- A Prisma adapter owns Prisma queries and entity-to-record mapping.
+- Inner layers never import routes or controllers.
+- Cross-feature calls use public services, not foreign repositories.
 
-## 4. Functions, errors & control flow
+## API contracts and errors
 
-- **Throw typed `AppError`s** from services
-  ([app-error.ts](server/src/utils/app-error.ts)); let `defineRoute` map
-  them to a safe `ActionResult` + HTTP status. Don't return ad-hoc error objects.
-- Guard clauses over nested `if`/`else`. Validate/early-return at the top.
-- No silent `catch {}` — handle, rethrow, or log with context. The one exception
-  is the audit writer, which intentionally swallows (logging the failure) so it
-  never breaks the user operation.
-- Keep handlers in `controllers/*.controller.ts` to **one logical statement**:
-  declare policy, call the service, return. Logic belongs in the service.
-- OAuth handlers orchestrate protocol I/O only: parse provider/callback, enforce
-  rate limit, delegate verification/service work, set/clear cookies, and redirect
-  to `CLIENT_URL`. Account creation/linking decisions remain in `AuthService`.
+- Standard API responses are `ActionResult<T>`:
 
----
+  ```ts
+  { ok: true, data: T }
+  { ok: false, error: { code, message, requestId?, fieldErrors?, retryAfter? } }
+  ```
 
-## 5. Data, money & dates
+- Throw typed `AppError` subclasses from services. Let `defineRoute()` map
+  them to safe responses.
+- Do not return ad-hoc error objects or expose stack traces.
+- Use generic authentication failures; do not reveal whether an account exists.
+- Unknown failures are logged server-side with a request ID and become a generic
+  client message.
+- Never silently swallow errors unless the operation is explicitly best-effort
+  and the failure is safely logged (audit writing is the established example).
 
-- Money: `Decimal(19,4)` in Prisma, **`string`** in DTOs/transport, validated by
-  a decimal regex in Zod. Never `number`/`Float`/`parseFloat` for money.
-- Timestamps are **UTC**; DTOs serialize dates with `.toISOString()`.
-- Pagination is **keyset/seek** for owned lists (opaque cursor), not `OFFSET`.
-  Page size is clamped via [pagination.ts](server/src/utils/pagination.ts).
-- Repository `where` always includes `userId` (and `deletedAt: null` for
-  soft-deletable models). Use `updateMany`/`deleteMany` so ownership lives in the
-  WHERE; never `update({ where: { id } })` on owned rows.
+## Validation
 
----
+- Treat all request, provider, cookie, and environment data as untrusted.
+- Bound strings and arrays in Zod.
+- Validate money as a decimal string.
+- Keep database-dependent rules in services, not schemas.
+- Use `.strict()` for request objects unless unknown keys are intentionally
+  supported.
+- Client validation improves UX only; server validation is authoritative.
 
-## 6. Zod schemas
+## Money, dates, and pagination
 
-- Bound every string (`.max(...)`) and collection; reject rather than truncate.
-- Coerce deliberately (`z.coerce.date()`), not pervasively.
-- Export both the schema and the inferred input type; services consume the type.
-- Keep schemas free of business rules that need the DB (those go in the service).
-- The API parses every request body with Zod inside `defineRoute` before a
-  service ever sees it. Because the client and server are separate apps, the
-  server schema is the **single authoritative** validation; client-side checks
-  are UX only and never relied upon.
+- Database money is Prisma `Decimal` backed by SQL
+  `Decimal(19,4)`.
+- DTO and client money values are strings.
+- Use decimal helpers or Prisma Decimal for arithmetic. Do not use
+  `parseFloat`, binary floating point, or formatted currency strings in
+  calculations.
+- Persist timestamps in UTC and serialize them as ISO 8601 strings.
+- The monthly-balance API and model use zero-based months.
+- Format dates/currency only at the presentation boundary.
+- Transaction lists use bounded keyset pagination where applicable.
 
----
+## Persistence
 
-## 7. Authentication and cryptography
+- Every owned query includes `userId` in its database predicate.
+- Include `deletedAt: null` for active soft-deletable records.
+- Prefer ownership-safe `updateMany`/`deleteMany` operations over an ID-only
+  update followed by an ownership check.
+- Select only fields needed by the service.
+- Avoid query-per-row loops. Use aggregates, grouping, or relation loading.
+- Do not interpolate raw SQL. If raw SQL is unavoidable, use Prisma's tagged
+  parameterized APIs and document why.
+- Never edit a committed migration.
 
-- Normalize emails once at the schema boundary with trim + lowercase; preserve
-  the SQL Server unique constraint as the final concurrency guarantee.
-- Password inputs are 12–128 characters. Hash and verify only through
-  [password.ts](server/src/utils/password.ts); the encoded hash must carry
-  its algorithm and work factors so future upgrades are explicit.
-- Authentication failures use generic client messages. Logs may contain internal
-  user ids and provider names, never email addresses, passwords, hashes, JWTs,
-  OAuth codes/tokens, state values, or secrets.
-- Sign JWTs and OAuth state with the typed secret from `env.ts`. Pin algorithms
-  and claims explicitly; never select a crypto algorithm from untrusted input.
-- Cookie mutations stay in `session-cookie.ts` / `oauth.routes.ts`. Production
-  session cookies are `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, bounded by
-  the configured TTL, and cleared with the same path/attributes.
-- JWT claims are identity/session data only (`sub`, `sv`, issuer, audience,
-  timestamps, `jti`). Roles and permissions are loaded from SQL Server on every
-  protected server boundary (`requireAuth`).
-- OAuth callback URLs are derived from `APP_URL`, not request headers. Post-auth
-  redirects target `CLIENT_URL` and accept only local paths beginning with one
-  `/`; reject protocol-relative URLs.
-- Provider responses are untrusted JSON: check HTTP status, parse with Zod, and
-  verify signature/token validity, audience/app id, issuer where applicable,
-  expiry, nonce/state, and provider user-id consistency before persistence.
-- Email auto-linking requires `emailVerifiedAt`, except for a credential-less
-  legacy row where `passwordHash`, `googleId`, and `facebookId` are all null.
-- Do not invent password reset, email verification, MFA, token refresh, or account
-  linking flows inside unrelated features. Add them as explicit auth use cases
-  with schemas, rate limits, audit design, migrations, and threat-model updates.
+## React and client data access
 
----
+- Route definitions live in `client/src/App.tsx`.
+- Protected page chrome and mobile navigation live in
+  `client/src/components/app-layout.tsx`.
+- Authentication state is accessed through `useAuth()`.
+- All HTTP calls go through `client/src/lib/api.ts`; feature calls are declared
+  in `client/src/lib/endpoints.ts`.
+- Mirror server DTO contracts in `client/src/lib/types.ts`.
+- Keep server state reloading explicit after mutations.
+- Use `ApiError` for server errors and show its safe message.
+- Do not put authorization decisions in React. Route guards are navigation UX;
+  the API remains the enforcement boundary.
 
-## 8. Imports & dependency direction
+## React component style
 
-Allowed direction only (in `server/`): `routes/` → `controllers/` → `services/`
-→ `repositories/` → `config/prisma`. Schemas, DTOs, and `utils/` are leaf layers
-imported as needed; inner layers never import from `routes/` or `controllers/`.
-A feature imports another feature's **public service + DTO** only — never its
-repository or schema internals. Prisma is imported solely in the files listed in
-[AGENTS.md](AGENTS.md) §2. The `client/` never imports from `server/`.
+- Use function components and hooks.
+- Keep hooks unconditional and before early returns.
+- Derive maps/filtered collections with `useMemo` only when it improves
+  stability or avoids meaningful repeated work.
+- Use `useCallback` when a function is an effect dependency or passed through
+  a stability-sensitive boundary.
+- Forms use semantic labels, native controls, and explicit submit handlers.
+- Interactive icons require accessible labels.
+- Dialogs use `role="dialog"`, `aria-modal`, Escape handling, backdrop close,
+  focus-visible styles, and scroll containment.
+- Avoid introducing a state library until shared state exceeds the current auth,
+  route, and local-page model.
 
----
+## Responsive UI
 
-## 9. Comments & documentation
+- Mobile is a supported primary layout, not a desktop fallback.
+- Default Tailwind classes target mobile; add `sm:`, `lg:`, etc. for larger
+  layouts.
+- Maintain the fixed mobile bottom navigation and safe-area padding.
+- Use 44px touch targets for primary mobile controls.
+- Use compact mobile tables/cards when repeated labels would make rows tall.
+- Prevent page-level horizontal overflow. Wide tables may scroll inside their
+  own bounded container.
+- Use `min-w-0` on flex/grid children containing truncatable content.
+- Keep desktop sizing and mobile sizing independently intentional.
 
-- Comment the **why**, not the **what**. A short header on each non-trivial file
-  stating its role and the relevant `docs/ARCHITECTURE.md` section is expected
-  (see existing files for the house style).
-- Reference architecture sections (`§N`) where a rule originates, so reviewers
-  can trace intent.
-- No commented-out code in commits; delete it (git remembers).
+## Styling
 
----
+- Use Tailwind utilities for component styling and `client/src/index.css` for
+  global theme/safe-area rules.
+- Reuse the established palette: emerald for brand/income, rose for expenses or
+  destructive states, amber for warnings/manual values, neutral for structure.
+- Preserve dark-theme overrides when adding new surface/text/accent utilities.
+- Reuse existing rounded-card, hero, summary-card, modal, and navigation
+  patterns instead of creating near-duplicates.
+- Keep user-provided text escaped by React; do not use
+  `dangerouslySetInnerHTML`.
 
-## 10. React / UI
+## Authentication and sensitive data
 
-- Tailwind utility classes; shared primitives under `client/src/components/`
-  (no business logic in components).
-- Forms call the API client and render the typed `ActionResult` — show
-  `error.message` (+ `requestId` for support), never raw errors.
-- Auth forms use the sign-in/sign-up endpoints and server-generated OAuth start
-  URLs (`/api/auth/oauth/<provider>`). Do not add browser-side provider SDKs or
-  store auth state in local/session storage; rely on the HttpOnly cookie + `/me`.
-- Keep accessibility basics: labelled inputs, semantic elements, keyboard-usable.
-- **Modals / popovers / dropdowns render through a portal to `document.body`**
-  (`createPortal`), never as a `position: fixed` child of a card or list item. A
-  `transform`, `filter`, or `backdrop-filter` on any ancestor makes `fixed`
-  resolve against that ancestor (not the viewport), and `overflow-hidden` then
-  clips the overlay. Give overlays backdrop-click + `Escape` to close and
-  `role="dialog"` / `aria-modal`.
+- Session cookies are HttpOnly, SameSite=Lax, Secure outside local development,
+  and set/cleared only through the server session helpers.
+- Password hashing/verification stays in `utils/password.ts`.
+- JWT creation/verification stays in `utils/jwt.ts`.
+- OAuth state and provider verification stay in `utils/oauth.ts` and the OAuth
+  controller.
+- Provider tokens, authorization codes, password values, and session tokens
+  never enter DTOs, audit metadata, or operational logs.
+- Roles and permissions are loaded from the database on protected requests.
 
----
+## Comments and documentation
 
-## 11. Tooling & commits
+- Comment why a constraint exists, not what obvious code does.
+- Keep architecture references accurate after structural changes.
+- Delete obsolete comments and commented-out code.
+- Update AGENTS, coding standards, architecture, README, and SECURITY when a
+  change alters their documented contract.
+- Do not describe planned functionality as implemented.
 
-- Before pushing: in `server/` run `npm run typecheck && npm run lint &&
-  npm run build`; in `client/` run `npm run typecheck && npm run build`.
-- Schema changes ship with a reviewed migration (`prisma migrate dev`); never
-  edit a committed migration — add a new one.
-- Authentication changes additionally require review of cookie flags, JWT claim
-  validation, OAuth redirect URIs, rate limits, account-linking rules, CORS
-  origin/credentials config, and secret redaction.
-- Small, focused commits with imperative messages describing intent.
-- Match the existing code's idiom and comment density when editing a file.
+## Verification
+
+From the repository root:
+
+```powershell
+npm run typecheck
+npm run lint
+npm run build
+```
+
+For Prisma work:
+
+```powershell
+Set-Location server
+npx prisma validate
+npx prisma generate
+```
+
+Review UI changes at mobile and desktop widths. Review auth, ownership, money,
+and migration changes against [SECURITY.md](SECURITY.md) before completion.

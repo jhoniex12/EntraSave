@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { applyTheme, readStoredTheme, storeTheme, THEME_OPTIONS, type Theme } from '@/lib/theme';
 
 /**
- * Colour-theme picker (System / Light / Dark) — port of the original
- * FinanceWebsite `ThemeSelector`. A native <details> dropdown; the choice is
- * persisted to localStorage and applied instantly, and "System" tracks the OS
- * preference live.
+ * Colour-theme picker (System / Light / Dark). A native <details> dropdown;
+ * the choice is persisted to localStorage and applied instantly, and "System"
+ * tracks the OS preference live.
  */
 export function ThemeSelector() {
   const [theme, setTheme] = useState<Theme>('system');

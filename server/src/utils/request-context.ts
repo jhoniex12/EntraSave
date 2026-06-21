@@ -3,9 +3,8 @@ import type { Request } from 'express';
 /**
  * Request-derived context primitives (docs/ARCHITECTURE.md §4, §13).
  *
- * The edge (Cloudflare/IIS) is the trust boundary for forwarded headers; behind
- * it we read the client IP for per-IP rate limiting and audit. In Next.js this
- * came from `headers()`; here it comes from the Express request.
+ * The edge proxy is the trust boundary for forwarded headers. The API reads the
+ * resulting client IP for per-IP rate limiting and audit context.
  */
 export function clientIp(req: Request): string | undefined {
   const cfIp = req.headers['cf-connecting-ip'];

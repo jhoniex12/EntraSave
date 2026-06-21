@@ -2,11 +2,9 @@ import type { NextFunction, Request, Response } from 'express';
 import { isProd } from '@/config/env';
 
 /**
- * Hardened security headers (docs/ARCHITECTURE.md §11.2, SECURITY.md §2). In
- * Next.js these were set in edge middleware with a nonce-based document CSP.
- * This API serves JSON only (the React client is a separate origin), so the CSP
- * is the strict API variant (`default-src 'none'`). Set in one place; do not set
- * conflicting headers elsewhere.
+ * Hardened security headers. This API serves JSON only, so its CSP is the
+ * strict API variant (`default-src 'none'`). Set headers in one place and do
+ * not introduce conflicting values elsewhere.
  */
 export function securityHeaders(_req: Request, res: Response, next: NextFunction): void {
   res.setHeader(

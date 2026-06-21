@@ -1,6 +1,6 @@
-// Finance — Prisma schema (FOUNDATION SUBSET)
-// Full model set is documented in docs/ARCHITECTURE.md §9. This file contains
-// only what the Accounts + Transactions vertical slice and RBAC require.
+// EntraSave — authoritative Prisma schema.
+// It contains the identity/RBAC, finance, budget, monthly-balance, and audit
+// models implemented by the application.
 // Money is ALWAYS Decimal(19,4) — never Float. Timestamps are stored UTC.
 // Provider is SQL Server today; PostgreSQL migration path is docs §19.
 //

@@ -2,9 +2,8 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
 /**
- * Shared chrome for the legal pages — port of the FinanceWebsite
- * `_components/legal-page.tsx`. `next/image`/`next/link` become a plain `<img>`
- * (brand asset under /brand) + react-router `Link`.
+ * Shared EntraSave chrome for legal pages, using the public brand assets and
+ * React Router links.
  */
 export const LEGAL_UPDATED = '20 June 2026';
 

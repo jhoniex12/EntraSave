@@ -6,7 +6,7 @@ import { useAuth } from '@/auth/auth-context';
 import { ProviderIcon } from '@/components/provider-icon';
 
 /**
- * Credential + OAuth entry form (port of the Next.js `auth-form.tsx`). On
+ * Credential and OAuth entry form. On
  * success the API sets the HttpOnly session cookie; we then refresh `/me` and
  * navigate. OAuth uses a server-generated start URL — no provider SDK in the
  * browser, no auth state in local storage (SECURITY.md §2).

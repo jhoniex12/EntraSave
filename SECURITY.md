@@ -1,9 +1,8 @@
 # SECURITY.md
 
-Security policy and engineering rules for the EntraSave application (the React +
-Express port of the original Next.js Finance app). This is the enforceable
-companion to [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §11–§14. Treat every
-rule here as a merge gate.
+Security policy and engineering rules for the EntraSave application. This is the
+enforceable companion to [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Treat
+every rule here as a merge gate.
 
 ---
 

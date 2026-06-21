@@ -12,9 +12,7 @@ import {
  *
  * The single place the `entrasave_session` cookie is written, cleared, or read.
  * Production cookies are `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, and
- * bounded by the configured TTL. The Express port replaces Next's
- * `next/headers cookies()` with the response/request objects, keeping every
- * cookie attribute identical.
+ * bounded by the configured TTL.
  */
 export async function setSessionCookie(
   res: Response,

@@ -27,7 +27,7 @@ const MOBILE_RIGHT = [
 ];
 
 /**
- * Authenticated shell (port of the Next.js `(app)/layout.tsx` + nav components).
+ * Authenticated application shell and responsive navigation.
  * Redirects to /sign-in when there is no session — the server still enforces
  * auth on every API call, so this is purely a navigation gate.
  */

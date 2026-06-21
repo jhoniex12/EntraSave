@@ -52,8 +52,7 @@ export type ListTransactionsInput = z.infer<typeof ListTransactionsSchema>;
 
 /**
  * Read query for a single calendar month (UTC). `month` is 0-based (0 = January)
- * to match the app. In Next.js these came from page searchParams; in the SPA the
- * client posts them, so they are Zod-validated here at the boundary.
+ * to match the API and MonthlyBalance model.
  */
 export const GetMonthSchema = z.object({
   year: z.number().int().min(2000).max(2100),

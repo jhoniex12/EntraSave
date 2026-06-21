@@ -7,9 +7,8 @@ import { z } from 'zod';
  * `process.env` directly anywhere else — import the typed `env` from here so
  * there is a single, validated source of truth.
  *
- * This is the Express/Node port of the original Next.js `env.ts`. There is no
- * browser bundle here: the server never ships secrets to the client because the
- * client is a separate React app that talks to this API over HTTP.
+ * Server secrets never enter the client bundle; the React application talks to
+ * this API only through the documented HTTP boundary.
  */
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
