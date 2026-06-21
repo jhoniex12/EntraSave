@@ -54,8 +54,8 @@ npm run dev
 Default development addresses:
 
 - Client: http://localhost:5173
-- API: http://localhost:4000
-- Health: http://localhost:4000/health
+- API: http://localhost:4001
+- Health: http://localhost:4001/health
 
 The Vite development server proxies `/api` to the Express server.
 

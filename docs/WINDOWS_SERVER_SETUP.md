@@ -14,7 +14,7 @@ A step‑by‑step guide to run EntraSave on a Windows Server box: the **Node/Ex
 
 ```
 Browser ──HTTPS──> IIS (https://finance.example.com)
-                     ├── /api/*  ──reverse proxy──> Node API  (http://localhost:4000)
+                     ├── /api/*  ──reverse proxy──> Node API  (http://localhost:4001)
                      └── /*      ──static files───> client\dist (React SPA)
                                                        │
                                               Node API ──> SQL Server (Prisma)
@@ -24,7 +24,7 @@ Browser ──HTTPS──> IIS (https://finance.example.com)
   That keeps the `entrasave_session` cookie same‑site and satisfies the server's CSRF
   origin check and CORS allowlist.
 - The Node API runs TypeScript directly with `tsx` (no separate compile step) and listens
-  on `localhost:4000` — it is **not** exposed to the internet directly; IIS is the front door.
+  on `localhost:4001` — it is **not** exposed to the internet directly; IIS is the front door.
 
 ---
 
@@ -40,7 +40,7 @@ Install on the server:
 2. **SQL Server** (2019/2022, or Express edition) reachable from this host, plus
    **SQL Server Management Studio (SSMS)** or `sqlcmd` for setup.
 3. **Git** (to clone/update the code) — https://git-scm.com.
-4. **IIS** with these features (Server Manager → *Add Roles and Features* → Web Server (IIS)):
+4. **IIS** with these features (Server Manager → _Add Roles and Features_ → Web Server (IIS)):
    - Web Server → Common HTTP Features (Static Content, Default Document, HTTP Errors)
    - Web Server → Health and Diagnostics (HTTP Logging)
    - Web Server → Security (Request Filtering)
@@ -53,7 +53,7 @@ Install on the server:
 After installing ARR, enable the proxy once at the server level:
 
 - Open **IIS Manager** → click the **server node** (top of the tree) →
-  **Application Request Routing Cache** → *Server Proxy Settings* (right pane) →
+  **Application Request Routing Cache** → _Server Proxy Settings_ (right pane) →
   check **Enable proxy** → **Apply**.
 
 ---
@@ -89,6 +89,7 @@ GO
 ```
 
 Notes:
+
 - Enable **SQL Server Authentication** (Mixed Mode) so the login above works, and make sure
   the **SQL Server** + **SQL Server Browser** services are running and TCP/IP is enabled
   (SQL Server Configuration Manager) if connecting over `localhost:1433`.
@@ -143,6 +144,7 @@ FACEBOOK_GRAPH_VERSION=
 ```
 
 Important:
+
 - **`NODE_ENV=production`** makes session cookies `Secure`, so the site **must** be served
   over **HTTPS** (step 9) or logins won't work.
 - `APP_URL` must be the public HTTPS origin — it's used to build the OAuth callback URLs.
@@ -218,7 +220,7 @@ nssm start EntraSaveAPI
 Verify it's listening:
 
 ```powershell
-Invoke-RestMethod http://localhost:4000/health   # -> { ok = True; data = ... }
+Invoke-RestMethod http://localhost:4001/health   # -> { ok = True; data = ... }
 ```
 
 Service control later: `nssm restart EntraSaveAPI`, `nssm stop EntraSaveAPI`,
@@ -233,10 +235,10 @@ environment variables in NSSM.)
 
 ## 9. Publish the client through IIS (with the API reverse proxy)
 
-1. In **IIS Manager**, create a site (or use *Default Web Site*):
+1. In **IIS Manager**, create a site (or use _Default Web Site_):
    - **Physical path:** `D:\apps\EntraSave\client\dist`
    - **Binding:** add an **https** binding for `finance.example.com` and select your TLS
-     certificate. (Import a real cert, or use *Server Certificates → Create Self‑Signed*
+     certificate. (Import a real cert, or use _Server Certificates → Create Self‑Signed_
      for testing. Public HTTPS is required because cookies are `Secure` in production.)
    - Optionally add an http binding and an HTTP→HTTPS redirect.
 
@@ -253,10 +255,10 @@ environment variables in NSSM.)
      <system.webServer>
        <rewrite>
          <rules>
-           <!-- Forward API calls to the Node service on localhost:4000 -->
+           <!-- Forward API calls to the Node service on localhost:4001 -->
            <rule name="EntraSave API proxy" stopProcessing="true">
              <match url="^api/(.*)" />
-             <action type="Rewrite" url="http://localhost:4000/api/{R:1}" />
+             <action type="Rewrite" url="http://localhost:4001/api/{R:1}" />
            </rule>
 
            <!-- SPA fallback: anything that isn't a real file/dir -> index.html -->
@@ -303,7 +305,7 @@ Set `FACEBOOK_GRAPH_VERSION` to a real version like `v19.0`. Restart the API aft
 
 ## 11. Verify the deployment
 
-- `Invoke-RestMethod http://localhost:4000/health` → healthy.
+- `Invoke-RestMethod http://localhost:4001/health` → healthy.
 - Open the public site over **HTTPS**, create an account (sign up), and confirm you land on
   the dashboard. A successful login proves cookies (Secure + same‑site) and the `/api`
   proxy are working end‑to‑end.
@@ -328,27 +330,27 @@ IIS picks up the new `client\dist` files immediately (the HTML shell isn't cache
 
 ## 13. Troubleshooting
 
-| Symptom | Likely cause / fix |
-|---|---|
-| API service won't start / stops immediately | Run `npm run start` in `server\` by hand; it prints which `.env` field is invalid. Check `logs\api.err.log`. |
-| `prisma migrate deploy` fails to connect | Wrong `DATABASE_URL`; SQL Server TCP/IP disabled; firewall on 1433; login not in `db_owner`. |
+| Symptom                                                   | Likely cause / fix                                                                                                                      |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| API service won't start / stops immediately               | Run `npm run start` in `server\` by hand; it prints which `.env` field is invalid. Check `logs\api.err.log`.                            |
+| `prisma migrate deploy` fails to connect                  | Wrong `DATABASE_URL`; SQL Server TCP/IP disabled; firewall on 1433; login not in `db_owner`.                                            |
 | Login appears to succeed but you're logged out on refresh | Cookies are `Secure` (NODE_ENV=production) but the site isn't on **HTTPS**, or `CLIENT_URL` doesn't exactly match the browser's origin. |
-| `/api/...` returns 404/502 from IIS | ARR **proxy not enabled** (step 1), or the `web.config` API rule is missing, or the API service is down (`nssm status EntraSaveAPI`). |
-| "Cross-site request blocked" on POSTs | `CLIENT_URL` must equal the public origin with no trailing slash (it's the CSRF/CORS origin). |
-| Sign-up errors about a missing role | You skipped `npm run db:seed`. Run it. |
-| Google/Facebook button does nothing / errors | Provider not configured (both ID + secret required), wrong callback URL, or `APP_URL` not matching the registered redirect. |
+| `/api/...` returns 404/502 from IIS                       | ARR **proxy not enabled** (step 1), or the `web.config` API rule is missing, or the API service is down (`nssm status EntraSaveAPI`).   |
+| "Cross-site request blocked" on POSTs                     | `CLIENT_URL` must equal the public origin with no trailing slash (it's the CSRF/CORS origin).                                           |
+| Sign-up errors about a missing role                       | You skipped `npm run db:seed`. Run it.                                                                                                  |
+| Google/Facebook button does nothing / errors              | Provider not configured (both ID + secret required), wrong callback URL, or `APP_URL` not matching the registered redirect.             |
 
 ---
 
 ## Quick reference
 
-| Task | Command (from the folder shown) |
-|---|---|
-| Install everything | `npm run install:all` (repo root) |
-| Generate Prisma client | `npm run prisma:generate` (server) |
-| Apply migrations | `npm run prisma:deploy` (server) |
-| Seed roles/permissions | `npm run db:seed` (server) |
-| Build the SPA | `npm run build` (client) |
-| Run API in foreground | `npm run start` (server) |
-| Restart API service | `nssm restart EntraSaveAPI` |
-| API health check | `Invoke-RestMethod http://localhost:4000/health` |
+| Task                   | Command (from the folder shown)                  |
+| ---------------------- | ------------------------------------------------ |
+| Install everything     | `npm run install:all` (repo root)                |
+| Generate Prisma client | `npm run prisma:generate` (server)               |
+| Apply migrations       | `npm run prisma:deploy` (server)                 |
+| Seed roles/permissions | `npm run db:seed` (server)                       |
+| Build the SPA          | `npm run build` (client)                         |
+| Run API in foreground  | `npm run start` (server)                         |
+| Restart API service    | `nssm restart EntraSaveAPI`                      |
+| API health check       | `Invoke-RestMethod http://localhost:4001/health` |
