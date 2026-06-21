@@ -1,0 +1,73 @@
+{
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": { "ecmaVersion": 2022, "sourceType": "module" },
+  "plugins": ["@typescript-eslint"],
+  "extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended"],
+  "env": { "node": true, "es2022": true },
+  "rules": {
+    "no-process-env": "error",
+    "@typescript-eslint/no-unused-vars": [
+      "error",
+      { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }
+    ],
+    "@typescript-eslint/no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "@/config/prisma",
+            "message": "The Prisma client may only be imported in repository adapters (repositories/*.prisma.ts), repositories/rbac.repository.ts, and services/audit.service.ts. See AGENTS.md section 2 / CODING_STANDARDS.md section 8."
+          },
+          {
+            "name": "@prisma/client",
+            "allowTypeImports": true,
+            "message": "Import Prisma TYPES with `import type { ... } from '@prisma/client'`. The runtime client is only used in *.prisma.ts adapters. See AGENTS.md section 2."
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/routes/**/*.ts", "src/controllers/**/*.ts"],
+      "rules": {
+        "@typescript-eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@/repositories/*"],
+                "message": "Controllers and routes must not import repositories directly. Go through the service. See CODING_STANDARDS.md section 8."
+              }
+            ],
+            "paths": [
+              {
+                "name": "@/config/prisma",
+                "message": "Prisma is only imported in repository adapters and the RBAC/audit infra. See AGENTS.md section 2."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/repositories/*.prisma.ts",
+        "src/repositories/rbac.repository.ts",
+        "src/config/prisma.ts",
+        "src/services/audit.service.ts",
+        "prisma/**/*.ts"
+      ],
+      "rules": {
+        "@typescript-eslint/no-restricted-imports": "off"
+      }
+    },
+    {
+      "files": ["src/config/env.ts"],
+      "rules": {
+        "no-process-env": "off"
+      }
+    }
+  ]
+}

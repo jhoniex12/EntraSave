@@ -1,0 +1,222 @@
+// Finance — Prisma schema (FOUNDATION SUBSET)
+// Full model set is documented in docs/ARCHITECTURE.md §9. This file contains
+// only what the Accounts + Transactions vertical slice and RBAC require.
+// Money is ALWAYS Decimal(19,4) — never Float. Timestamps are stored UTC.
+// Provider is SQL Server today; PostgreSQL migration path is docs §19.
+//
+// NOTE: the SQL Server connector does NOT support Prisma `enum`s, so status/type
+// fields are `String`. Allowed values are enforced by Zod at the boundary
+// (see each module's *.schema.ts). This also eases the PostgreSQL migration.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────── Identity / RBAC ───────────────────────────
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  passwordHash    String?
+  // Filtered unique indexes are created in the self_managed_auth migration;
+  // Prisma cannot express SQL Server partial indexes in this schema.
+  googleId        String?   @db.NVarChar(255)
+  facebookId      String?   @db.NVarChar(255)
+  sessionVersion  Int       @default(0)
+  emailVerifiedAt DateTime?
+  displayName     String?
+  avatarUrl       String?   @db.NVarChar(2048)
+  status          String    @default("ACTIVE") // ACTIVE | SUSPENDED | DELETED
+  baseCurrency    String    @default("AUD")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  roles           UserRole[]
+  accounts        Account[]
+  categories      Category[]
+  transactions    Transaction[]
+  monthlyBalances MonthlyBalance[]
+  budgets         Budget[]
+  auditLogs       AuditLog[]       @relation("ActorAudit")
+
+  @@index([status])
+  @@index([deletedAt])
+  @@index([googleId])
+  @@index([facebookId])
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  key         String           @unique // USER, SUPPORT, ADMIN, SUPERADMIN
+  name        String
+  description String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  users       UserRole[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id        String           @id @default(cuid())
+  key       String           @unique // e.g. "transactions.write", "admin.users.read"
+  name      String
+  createdAt DateTime         @default(now())
+  roles     RolePermission[]
+}
+
+model UserRole {
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+// ─────────────────────────── Finance core ───────────────────────────
+
+model Account {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  type       String // CHECKING | SAVINGS | CASH | CREDIT_CARD | INVESTMENT | OTHER
+  currency   String    @default("AUD")
+  balance    Decimal   @default(0) @db.Decimal(19, 4)
+  isArchived Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([userId])
+  @@index([userId, deletedAt])
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  userId    String
+  name      String
+  kind      String // INCOME | EXPENSE
+  color     String?
+  position  Int       @default(0) // user-defined display order
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  budgets      Budget[]
+
+  @@unique([userId, name, kind])
+  @@index([userId])
+  @@index([userId, position])
+}
+
+// Reusable monthly spending limit for an expense category.
+model Budget {
+  id         String    @id @default(cuid())
+  userId     String
+  categoryId String
+  name       String
+  amount     Decimal   @db.Decimal(19, 4)
+  period     String    @default("MONTHLY")
+  startsAt   DateTime  @default(now())
+  endsAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([userId, categoryId, period])
+  @@index([userId])
+  @@index([userId, period])
+  @@index([userId, deletedAt])
+}
+
+model Transaction {
+  id          String    @id @default(cuid())
+  userId      String
+  accountId   String
+  categoryId  String?
+  type        String // INCOME | EXPENSE | TRANSFER
+  amount      Decimal   @db.Decimal(19, 4)
+  currency    String    @default("AUD")
+  description String?
+  notes       String?
+  occurredAt  DateTime
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  // User → Transaction is the single cascade path. The account/category paths
+  // are NoAction to avoid SQL Server's "multiple cascade paths" restriction.
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account  Account   @relation(fields: [accountId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([userId, occurredAt])
+  @@index([userId, accountId, occurredAt])
+  @@index([userId, categoryId])
+  @@index([userId, deletedAt])
+}
+
+// User-set starting balance override for a given month. When present, it
+// replaces the computed running balance for that month on the transactions page.
+model MonthlyBalance {
+  id              String   @id @default(cuid())
+  userId          String
+  year            Int
+  month           Int // 0-based (0 = January), matches app code
+  startingBalance Decimal  @db.Decimal(19, 4)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, year, month])
+  @@index([userId])
+}
+
+// ─────────────────────────── Platform ───────────────────────────
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorUserId  String?
+  targetUserId String?
+  action       String
+  resourceType String?
+  resourceId   String?
+  metadata     String?  @db.NVarChar(Max) // JSON, REDACTED — never raw money/PII
+  ip           String?
+  userAgent    String?
+  requestId    String?
+  createdAt    DateTime @default(now())
+
+  actor User? @relation("ActorAudit", fields: [actorUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([actorUserId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@index([action, createdAt])
+}

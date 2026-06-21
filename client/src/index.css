@@ -1,0 +1,206 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+:root.dark {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-neutral-50 text-neutral-900 antialiased;
+  overflow-x: hidden;
+}
+
+.mobile-main {
+  padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+}
+
+.mobile-nav {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@media (min-width: 640px) {
+  .mobile-main { padding-bottom: 2.5rem; }
+}
+
+/* ============================================================================
+   Dark theme palette (class-based).
+
+   Layered over the app's utility classes so existing components get a cohesive
+   dark mode without per-element `dark:` variants. Depth hierarchy (darkest →
+   lightest): hero panels < app background < cards < elevated chips.
+
+   Accent families (emerald = income/brand, rose = expense, amber = warning) are
+   darkened for fills and brightened for text so they read well on dark surfaces.
+   ========================================================================== */
+
+/* ---- Surfaces ---- */
+.dark body,
+.dark .bg-neutral-50 {
+  background-color: rgb(15 15 17) !important; /* app background */
+}
+
+.dark .bg-white,
+.dark .bg-white\/80,
+.dark .bg-white\/90 {
+  background-color: rgb(24 24 27) !important; /* cards */
+}
+
+.dark .bg-neutral-50\/50,
+.dark .bg-neutral-50\/60,
+.dark .bg-neutral-50\/70,
+.dark .bg-neutral-50\/80 {
+  background-color: rgb(32 32 35) !important; /* tinted sections */
+}
+
+.dark .bg-neutral-100,
+.dark .bg-neutral-900 {
+  background-color: rgb(39 39 42) !important; /* elevated chips / neutral buttons / tooltips */
+}
+
+.dark .hover\:bg-neutral-50:hover,
+.dark .hover\:bg-neutral-100:hover {
+  background-color: rgb(45 45 49) !important;
+}
+
+.dark .hover\:bg-neutral-700:hover {
+  background-color: rgb(52 52 57) !important;
+}
+
+/* Striking near-black hero panels stay the darkest, with a faint top edge and a
+   real shadow so they read as a raised panel on the dark background. */
+.dark .bg-neutral-950 {
+  background-color: rgb(9 9 11) !important;
+  box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.05) !important;
+}
+
+/* ---- Borders ---- */
+.dark .border-neutral-100,
+.dark .border-neutral-200,
+.dark .border-neutral-200\/70,
+.dark .border-neutral-200\/80,
+.dark .border-neutral-300 {
+  border-color: rgb(40 40 44) !important;
+}
+
+.dark .border-neutral-700 {
+  border-color: rgb(64 64 68) !important;
+}
+
+/* ---- Text ---- */
+.dark .text-neutral-900,
+.dark .text-neutral-800 {
+  color: rgb(244 244 245) !important;
+}
+
+.dark .text-neutral-700,
+.dark .text-neutral-600 {
+  color: rgb(212 212 216) !important;
+}
+
+.dark .text-neutral-500 {
+  color: rgb(161 161 170) !important;
+}
+
+.dark .text-neutral-400 {
+  color: rgb(138 138 146) !important;
+}
+
+/* ---- Accent: emerald (income / brand) ---- */
+.dark .bg-emerald-50 {
+  background-color: rgb(6 78 59 / 0.35) !important;
+}
+.dark .bg-emerald-100 {
+  background-color: rgb(6 78 59 / 0.55) !important;
+}
+.dark .text-emerald-600 {
+  color: rgb(52 211 153) !important;
+}
+.dark .text-emerald-700,
+.dark .text-emerald-800 {
+  color: rgb(110 231 183) !important;
+}
+.dark .border-emerald-200 {
+  border-color: rgb(6 95 70 / 0.6) !important;
+}
+.dark .to-emerald-50\/40,
+.dark .to-emerald-50\/50 {
+  --tw-gradient-to: rgb(6 78 59 / 0.25) var(--tw-gradient-to-position) !important;
+}
+
+/* ---- Accent: rose (expense) ---- */
+.dark .bg-rose-50 {
+  background-color: rgb(76 5 25 / 0.4) !important;
+}
+.dark .bg-rose-100 {
+  background-color: rgb(76 5 25 / 0.6) !important;
+}
+.dark .text-rose-500,
+.dark .text-rose-600 {
+  color: rgb(251 113 133) !important;
+}
+.dark .text-rose-700,
+.dark .text-rose-800 {
+  color: rgb(253 164 175) !important;
+}
+.dark .border-rose-200 {
+  border-color: rgb(136 19 55 / 0.6) !important;
+}
+
+/* ---- Accent: amber (warning / manual) ---- */
+.dark .bg-amber-50 {
+  background-color: rgb(69 26 3 / 0.4) !important;
+}
+.dark .bg-amber-100 {
+  background-color: rgb(69 26 3 / 0.6) !important;
+}
+.dark .text-amber-600,
+.dark .text-amber-700,
+.dark .text-amber-800 {
+  color: rgb(252 211 77) !important;
+}
+.dark .border-amber-200 {
+  border-color: rgb(120 53 15 / 0.6) !important;
+}
+
+/* ---- Gradient stops used on light backgrounds ---- */
+.dark .from-white,
+.dark .from-neutral-50 {
+  --tw-gradient-from: rgb(24 24 27) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(24 24 27 / 0) var(--tw-gradient-to-position) !important;
+}
+.dark .via-white {
+  --tw-gradient-stops: var(--tw-gradient-from), rgb(24 24 27) var(--tw-gradient-via-position),
+    var(--tw-gradient-to) !important;
+}
+.dark .to-white {
+  --tw-gradient-to: rgb(24 24 27) var(--tw-gradient-to-position) !important;
+}
+
+/* ---- Form controls ---- */
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: rgb(28 28 31);
+  color: rgb(244 244 245);
+  border-color: rgb(48 48 52);
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: rgb(115 115 122);
+}
+
+/* ---- Elevation (neutral-tinted shadows are invisible on dark) ---- */
+.dark .shadow-sm {
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.5) !important;
+}
+.dark .shadow-md {
+  box-shadow: 0 4px 12px -2px rgb(0 0 0 / 0.5) !important;
+}
+.dark .shadow-xl {
+  box-shadow: 0 24px 48px -16px rgb(0 0 0 / 0.65) !important;
+}
