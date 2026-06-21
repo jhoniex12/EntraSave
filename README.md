@@ -9,6 +9,7 @@ Project guidance:
 - [CODING_STANDARDS.md](CODING_STANDARDS.md)
 - [SECURITY.md](SECURITY.md)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/WINDOWS_SERVER_SETUP.md](docs/WINDOWS_SERVER_SETUP.md) — deploy on Windows Server (IIS + SQL Server)
 
 ## Features
 
