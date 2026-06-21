@@ -1,8 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { Prisma, type Transaction } from '@prisma/client';
 import { prisma } from '@/config/prisma';
 import type {
   TransactionRepository,
   CreateTransactionData,
+  CreateTransferData,
+  TransferLegs,
   UpdateTransactionData,
   ListTransactionsParams,
   MonthSummary,
@@ -17,19 +20,85 @@ import type {
  */
 class PrismaTransactionRepository implements TransactionRepository {
   async create(data: CreateTransactionData): Promise<Transaction> {
-    return prisma.transaction.create({
-      data: {
-        userId: data.userId,
-        accountId: data.accountId,
-        categoryId: data.categoryId,
-        type: data.type,
-        amount: data.amount, // string -> Decimal(19,4)
-        currency: data.currency,
-        description: data.description,
-        notes: data.notes,
-        occurredAt: data.occurredAt,
-      },
+    // Idempotent create: a retried submit (double-click, refresh, timeout) with
+    // the same key returns the row the first request inserted instead of a
+    // duplicate. Pre-check, then fall back to re-reading on the unique-index race.
+    if (data.idempotencyKey) {
+      const existing = await this.findByIdempotencyKey(data.userId, data.idempotencyKey);
+      if (existing) return existing;
+    }
+    try {
+      return await prisma.transaction.create({
+        data: {
+          userId: data.userId,
+          accountId: data.accountId,
+          categoryId: data.categoryId,
+          type: data.type,
+          amount: data.amount, // string -> Decimal(19,4)
+          currency: data.currency,
+          description: data.description,
+          notes: data.notes,
+          occurredAt: data.occurredAt,
+          idempotencyKey: data.idempotencyKey,
+        },
+      });
+    } catch (error) {
+      if (data.idempotencyKey && isUniqueConstraintError(error)) {
+        const existing = await this.findByIdempotencyKey(data.userId, data.idempotencyKey);
+        if (existing) return existing;
+      }
+      throw error;
+    }
+  }
+
+  private findByIdempotencyKey(userId: string, idempotencyKey: string): Promise<Transaction | null> {
+    return prisma.transaction.findFirst({ where: { userId, idempotencyKey } });
+  }
+
+  async createTransfer(data: CreateTransferData): Promise<TransferLegs> {
+    // Idempotent: a retried transfer with the same key returns the original legs
+    // instead of moving the money twice.
+    if (data.idempotencyKey) {
+      const existing = await this.findTransferByKey(data.userId, data.idempotencyKey);
+      if (existing) return existing;
+    }
+    const transferId = randomUUID();
+    const legBase = {
+      userId: data.userId,
+      amount: data.amount, // string -> Decimal(19,4)
+      currency: data.currency,
+      description: data.description,
+      occurredAt: data.occurredAt,
+      transferId,
+    };
+    try {
+      // Both legs in one DB transaction: either the money moves on both accounts
+      // or on neither — never a half-applied transfer.
+      return await prisma.$transaction(async (tx) => {
+        const out = await tx.transaction.create({
+          data: { ...legBase, accountId: data.fromAccountId, type: 'TRANSFER_OUT', idempotencyKey: data.idempotencyKey },
+        });
+        const inLeg = await tx.transaction.create({
+          data: { ...legBase, accountId: data.toAccountId, type: 'TRANSFER_IN' },
+        });
+        return { out, in: inLeg };
+      });
+    } catch (error) {
+      if (data.idempotencyKey && isUniqueConstraintError(error)) {
+        const existing = await this.findTransferByKey(data.userId, data.idempotencyKey);
+        if (existing) return existing;
+      }
+      throw error;
+    }
+  }
+
+  private async findTransferByKey(userId: string, idempotencyKey: string): Promise<TransferLegs | null> {
+    const out = await prisma.transaction.findFirst({ where: { userId, idempotencyKey } });
+    if (!out?.transferId) return null;
+    const inLeg = await prisma.transaction.findFirst({
+      where: { userId, transferId: out.transferId, type: 'TRANSFER_IN' },
     });
+    return inLeg ? { out, in: inLeg } : null;
   }
 
   async findByIdForUser(userId: string, id: string): Promise<Transaction | null> {
@@ -147,12 +216,25 @@ class PrismaTransactionRepository implements TransactionRepository {
   }
 
   async softDelete(userId: string, id: string): Promise<number> {
-    const result = await prisma.transaction.updateMany({
-      where: { id, userId, deletedAt: null },
-      data: { deletedAt: new Date() },
+    // Deleting either leg of a transfer removes both, atomically, so an account
+    // is never left with a one-sided (orphan) transfer leg.
+    return prisma.$transaction(async (tx) => {
+      const target = await tx.transaction.findFirst({
+        where: { id, userId, deletedAt: null },
+        select: { transferId: true },
+      });
+      if (!target) return 0;
+      const where = target.transferId
+        ? { userId, transferId: target.transferId, deletedAt: null }
+        : { id, userId, deletedAt: null };
+      const result = await tx.transaction.updateMany({ where, data: { deletedAt: new Date() } });
+      return result.count;
     });
-    return result.count;
   }
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
 }
 
 export const transactionRepository: TransactionRepository = new PrismaTransactionRepository();

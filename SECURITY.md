@@ -92,6 +92,14 @@ the only trust boundary, and every layer assumes the one before it failed.
 - The API enables CORS for a **single allowlisted origin** (`CLIENT_URL`) with
   `credentials: true`. Never reflect the request `Origin`, never use `*` with
   credentials, and never widen the allowlist to bypass a same-site cookie.
+- **CSRF is defended explicitly**, not just incidentally. The session cookie is
+  `SameSite=Lax`, and on top of that
+  [csrfGuard](server/src/middleware/csrf.ts) rejects every state-changing request
+  (any non-GET/HEAD/OPTIONS method) whose `Origin`/`Referer` is not the
+  allowlisted `CLIENT_URL`. CORS only governs whether JS may *read* a response;
+  this server-side origin check governs whether the request is *processed*.
+  Mutations must stay on unsafe methods (POST) so they are always covered — never
+  perform a state change on a GET.
 - Security headers (HSTS in prod, `X-Content-Type-Options`, `X-Frame-Options:
   DENY`, `Referrer-Policy`, `Permissions-Policy`, a locked-down `default-src
   'none'` CSP for the JSON API) are set once in

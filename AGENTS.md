@@ -79,7 +79,7 @@ decisions to `authService`.
 - Credential, Google, and Facebook authentication.
 - Versioned server sessions and profile management.
 - Accounts with opening balances, archiving, and deletion.
-- Income, expense, and transfer transactions.
+- Income and expense transactions.
 - Monthly starting-balance overrides.
 - Transaction editing, deletion, category filtering, and monthly navigation.
 - Ordered income/expense categories.

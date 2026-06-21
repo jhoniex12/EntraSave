@@ -24,6 +24,8 @@ export const api = {
       post<{ authenticated: true }>('/auth/signin', input),
     signUp: (input: { email: string; password: string; displayName?: string }) =>
       post<{ authenticated: true }>('/auth/signup', input),
+    unlink: (provider: 'google' | 'facebook') =>
+      post<{ provider: string; unlinked: true }>('/auth/unlink', { provider }),
   },
 
   accounts: {
@@ -36,6 +38,7 @@ export const api = {
       type: string;
       currency: string;
       openingBalance: string;
+      idempotencyKey?: string;
     }) => post<AccountDTO>('/accounts/create', input),
     update: (input: {
       id: string;
@@ -61,7 +64,16 @@ export const api = {
       description?: string;
       notes?: string;
       occurredAt: string;
+      idempotencyKey?: string;
     }) => post<TransactionDTO>('/transactions/create', input),
+    transfer: (input: {
+      fromAccountId: string;
+      toAccountId: string;
+      amount: string;
+      description?: string;
+      occurredAt: string;
+      idempotencyKey?: string;
+    }) => post<{ out: TransactionDTO; in: TransactionDTO }>('/transactions/transfer', input),
     update: (input: {
       id: string;
       categoryId?: string | null;

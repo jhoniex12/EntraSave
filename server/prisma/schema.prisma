@@ -97,10 +97,15 @@ model Account {
   id         String    @id @default(cuid())
   userId     String
   name       String
-  type       String // CHECKING | SAVINGS | CASH | CREDIT_CARD | INVESTMENT | OTHER
+  type       String // SAVINGS | CASH | OTHER (legacy rows may hold older values)
   currency   String    @default("AUD")
   balance    Decimal   @default(0) @db.Decimal(19, 4)
   isArchived Boolean   @default(false)
+  // Optional client-supplied idempotency key for safe create retries. A filtered
+  // unique index on [userId, idempotencyKey] (created in the idempotency_keys
+  // migration — SQL Server partial indexes can't be expressed here) dedupes
+  // double-submits, refreshes, and timeout retries.
+  idempotencyKey String? @db.NVarChar(255)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   deletedAt  DateTime?
@@ -160,12 +165,20 @@ model Transaction {
   userId      String
   accountId   String
   categoryId  String?
-  type        String // INCOME | EXPENSE | TRANSFER
+  type        String // INCOME | EXPENSE | TRANSFER_OUT | TRANSFER_IN
   amount      Decimal   @db.Decimal(19, 4)
   currency    String    @default("AUD")
   description String?
   notes       String?
   occurredAt  DateTime
+  // Optional client-supplied idempotency key for safe create retries. A filtered
+  // unique index on [userId, idempotencyKey] (created in the idempotency_keys
+  // migration) prevents duplicate transactions from double-submit/refresh/retry.
+  idempotencyKey String? @db.NVarChar(255)
+  // Links the two legs of a transfer (TRANSFER_OUT on the source account and
+  // TRANSFER_IN on the destination). Both legs share this id and are created,
+  // deleted, and reasoned about as one atomic unit.
+  transferId  String?   @db.NVarChar(255)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
@@ -180,6 +193,7 @@ model Transaction {
   @@index([userId, accountId, occurredAt])
   @@index([userId, categoryId])
   @@index([userId, deletedAt])
+  @@index([userId, transferId])
 }
 
 // User-set starting balance override for a given month. When present, it

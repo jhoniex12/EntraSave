@@ -10,6 +10,7 @@ import type { TransactionRepository } from '@/repositories/transaction.repositor
 import { toTransactionDTO, type TransactionDTO } from '@/dto/transaction.dto';
 import type {
   CreateTransactionInput,
+  CreateTransferInput,
   UpdateTransactionInput,
   ListTransactionsInput,
 } from '@/schemas/transaction.schema';
@@ -42,8 +43,43 @@ export class TransactionService {
       description: input.description,
       notes: input.notes,
       occurredAt: input.occurredAt,
+      idempotencyKey: input.idempotencyKey,
     });
     return toTransactionDTO(tx);
+  }
+
+  /**
+   * Move money between two of the caller's own accounts as one atomic unit.
+   * Both accounts must be owned by the caller and share a currency (cross-currency
+   * transfers need an FX policy that does not exist yet). The repository writes
+   * the two legs in a single DB transaction.
+   */
+  async createTransfer(
+    ctx: AuthContext,
+    input: CreateTransferInput,
+  ): Promise<{ out: TransactionDTO; in: TransactionDTO }> {
+    const [from, to] = await Promise.all([
+      accountService.getOwned(ctx, input.fromAccountId),
+      accountService.getOwned(ctx, input.toAccountId),
+    ]);
+    if (from.currency !== to.currency) {
+      throw new ValidationError(
+        { toAccountId: ['Both accounts must use the same currency'] },
+        'Cross-currency transfers are not supported',
+      );
+    }
+
+    const legs = await this.repo.createTransfer({
+      userId: ctx.userId,
+      fromAccountId: input.fromAccountId,
+      toAccountId: input.toAccountId,
+      amount: input.amount,
+      currency: from.currency,
+      description: input.description,
+      occurredAt: input.occurredAt,
+      idempotencyKey: input.idempotencyKey,
+    });
+    return { out: toTransactionDTO(legs.out), in: toTransactionDTO(legs.in) };
   }
 
   async list(ctx: AuthContext, input: ListTransactionsInput): Promise<Page<TransactionDTO>> {

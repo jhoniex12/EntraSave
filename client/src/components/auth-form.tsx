@@ -19,7 +19,10 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   const returnTo = safeReturnTo(params.get('returnTo'));
   const [error, setError] = useState<string | null>(oauthErrorMessage(params.get('error')));
   const [pending, setPending] = useState(false);
+  const [password, setPassword] = useState('');
   const [providers, setProviders] = useState({ googleEnabled: false, facebookEnabled: false });
+
+  const strength = passwordStrength(password);
 
   useEffect(() => {
     api.auth.providers().then(setProviders).catch(() => undefined);
@@ -78,8 +81,12 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
         </label>
         <label className="block text-sm font-medium text-neutral-700">
           Password
-          <input name="password" type="password" autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'} required minLength={12} maxLength={128} className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100" />
-          {mode === 'sign-up' && <span className="mt-1 block text-xs font-normal text-neutral-400">At least 12 characters.</span>}
+          <input name="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'} required minLength={8} maxLength={128} className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100" />
+          {mode === 'sign-up' && (
+            password
+              ? <PasswordStrengthMeter strength={strength} />
+              : <span className="mt-1 block text-xs font-normal text-neutral-400">At least 8 characters, with an uppercase letter, a number, and a special character.</span>
+          )}
         </label>
         {error && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
         <button disabled={pending} className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
@@ -111,6 +118,46 @@ function OAuthLink({ provider, enabled, returnTo }: { provider: 'google' | 'face
   );
 }
 
+type Strength = { score: number; label: string; barClass: string; textClass: string };
+
+/**
+ * Scores a candidate password against the sign-up policy enforced server-side
+ * (StrongPasswordSchema): 8+ chars plus uppercase, lowercase, number, and a
+ * special character. Extra length adds bonus points so a fully compliant
+ * long password reads as "Strong".
+ */
+function passwordStrength(password: string): Strength {
+  if (!password) return { score: 0, label: '', barClass: '', textClass: '' };
+  let score = 0;
+  if (password.length >= 8) score++;
+  if (/[A-Z]/.test(password)) score++;
+  if (/[a-z]/.test(password)) score++;
+  if (/[0-9]/.test(password)) score++;
+  if (/[^A-Za-z0-9]/.test(password)) score++;
+  if (password.length >= 16) score++;
+
+  if (score <= 2) return { score, label: 'Weak', barClass: 'bg-rose-500', textClass: 'text-rose-600' };
+  if (score <= 4) return { score, label: 'Fair', barClass: 'bg-amber-500', textClass: 'text-amber-600' };
+  if (score === 5) return { score, label: 'Good', barClass: 'bg-lime-500', textClass: 'text-lime-600' };
+  return { score, label: 'Strong', barClass: 'bg-emerald-600', textClass: 'text-emerald-700' };
+}
+
+function PasswordStrengthMeter({ strength }: { strength: Strength }) {
+  const segments = 6;
+  return (
+    <div className="mt-2">
+      <div className="flex gap-1" aria-hidden="true">
+        {Array.from({ length: segments }, (_, i) => (
+          <span key={i} className={`h-1 flex-1 rounded-full ${i < strength.score ? strength.barClass : 'bg-neutral-200'}`} />
+        ))}
+      </div>
+      <p className={`mt-1 text-xs font-medium ${strength.textClass}`} aria-live="polite">
+        Password strength: {strength.label}
+      </p>
+    </div>
+  );
+}
+
 function safeReturnTo(value: string | null): string {
   return value && value.startsWith('/') && !value.startsWith('//') ? value : '/dashboard';
 }
@@ -119,5 +166,8 @@ function oauthErrorMessage(code: string | null): string | null {
   if (!code) return null;
   if (code === 'provider_unavailable') return 'That login provider is not configured.';
   if (code === 'rate_limited') return 'Too many login attempts. Try again later.';
+  if (code === 'account_exists') {
+    return 'An account with this email already exists. Sign in with your email and password, then connect this provider from Manage account.';
+  }
   return 'The provider login could not be completed. Please try again.';
 }

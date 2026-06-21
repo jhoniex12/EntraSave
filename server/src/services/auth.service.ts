@@ -1,8 +1,8 @@
 import { authRepository } from '@/repositories/auth.prisma';
 import type { AuthRepository, OAuthIdentityData } from '@/repositories/auth.repository';
 import type { AuthSessionDTO } from '@/dto/auth.dto';
-import type { SignInInput, SignUpInput } from '@/schemas/auth.schema';
-import { ConflictError, ForbiddenError } from '@/utils/app-error';
+import type { OAuthProvider, SignInInput, SignUpInput } from '@/schemas/auth.schema';
+import { ConflictError, ForbiddenError, NotFoundError } from '@/utils/app-error';
 import { hashPassword, verifyPassword } from '@/utils/password';
 import { logger } from '@/utils/logger';
 
@@ -46,6 +46,47 @@ export class AuthService {
     return { userId: account.id, sessionVersion: account.sessionVersion };
   }
 
+  /**
+   * Attach a verified provider identity to the already-authenticated user
+   * (settings "Connect" flow). This is the safe counterpart to the sign-in
+   * guard that refuses to auto-claim password accounts: here the user has proven
+   * ownership of the account via their session before linking.
+   */
+  async linkOAuthIdentity(userId: string, identity: OAuthIdentityData): Promise<void> {
+    const result = await this.repo.linkOAuthProvider({
+      userId,
+      provider: identity.provider,
+      providerId: identity.providerId,
+    });
+    const label = providerLabel(identity.provider);
+    switch (result) {
+      case 'linked':
+        logger.info('auth.oauth.linked', { userId, provider: identity.provider });
+        return;
+      case 'provider_taken':
+        throw new ConflictError(`This ${label} account is already linked to another EntraSave account.`);
+      case 'already_connected':
+        throw new ConflictError(`A different ${label} account is already connected. Disconnect it first.`);
+      case 'not_found':
+        throw new NotFoundError('User profile not found.');
+    }
+  }
+
+  async unlinkProvider(userId: string, provider: OAuthProvider): Promise<void> {
+    const result = await this.repo.unlinkOAuthProvider(userId, provider);
+    switch (result) {
+      case 'unlinked':
+        logger.info('auth.oauth.unlinked', { userId, provider });
+        return;
+      case 'last_method':
+        throw new ConflictError('You can’t remove your only sign-in method. Set a password or connect another provider first.');
+      case 'not_connected':
+        throw new ConflictError(`${providerLabel(provider)} is not connected to your account.`);
+      case 'not_found':
+        throw new NotFoundError('User profile not found.');
+    }
+  }
+
   async logout(userId: string): Promise<void> {
     await this.repo.incrementSessionVersion(userId);
     logger.info('auth.logout.succeeded', { userId });
@@ -54,6 +95,10 @@ export class AuthService {
   private assertActive(status: string): void {
     if (status !== 'ACTIVE') throw new ForbiddenError('This account is not active.');
   }
+}
+
+function providerLabel(provider: OAuthProvider): string {
+  return provider === 'google' ? 'Google' : 'Facebook';
 }
 
 export const authService = new AuthService(authRepository);

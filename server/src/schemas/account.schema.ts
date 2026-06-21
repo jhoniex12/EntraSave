@@ -7,11 +7,8 @@ import { isSupportedCurrency, DEFAULT_CURRENCY } from '@/utils/currencies';
  * (request-size / abuse defense).
  */
 export const ACCOUNT_TYPES = [
-  'CHECKING',
   'SAVINGS',
   'CASH',
-  'CREDIT_CARD',
-  'INVESTMENT',
   'OTHER',
 ] as const;
 
@@ -31,6 +28,9 @@ export const CreateAccountSchema = z.object({
     .trim()
     .regex(/^-?\d{1,15}(\.\d{1,4})?$/, 'Invalid amount')
     .default('0'),
+  // Optional client-generated key so a retried create (double-click, refresh,
+  // timeout) returns the original account instead of inserting a duplicate.
+  idempotencyKey: z.string().uuid().optional(),
 });
 export type CreateAccountInput = z.infer<typeof CreateAccountSchema>;
 

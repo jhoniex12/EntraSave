@@ -14,6 +14,8 @@ export interface TransactionDTO {
   currency: string;
   description: string | null;
   notes: string | null;
+  /** Set on transfer legs; pairs TRANSFER_OUT with its TRANSFER_IN. */
+  transferId: string | null;
   occurredAt: string;
   createdAt: string;
   updatedAt: string;
@@ -29,6 +31,7 @@ export function toTransactionDTO(tx: Transaction): TransactionDTO {
     currency: tx.currency,
     description: tx.description,
     notes: tx.notes,
+    transferId: tx.transferId,
     occurredAt: tx.occurredAt.toISOString(),
     createdAt: tx.createdAt.toISOString(),
     updatedAt: tx.updatedAt.toISOString(),

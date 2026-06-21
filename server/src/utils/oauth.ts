@@ -11,6 +11,12 @@ const FlowSchema = z.object({
   nonce: z.string().min(32),
   returnTo: z.string().startsWith('/'),
   exp: z.number().int(),
+  /**
+   * Present only for an authenticated "link this provider to my account" flow.
+   * Carries the initiating user's id. The cookie is HMAC-signed, so this id is
+   * tamper-proof; the callback still re-checks it against the live session.
+   */
+  link: z.string().min(1).optional(),
 }).strict();
 
 type OAuthFlow = z.infer<typeof FlowSchema>;
@@ -26,7 +32,11 @@ export function oauthFlowCookieName(provider: OAuthProvider): string {
   return `entrasave_oauth_${provider}`;
 }
 
-export function createOAuthAuthorization(provider: OAuthProvider, returnTo: string): {
+export function createOAuthAuthorization(
+  provider: OAuthProvider,
+  returnTo: string,
+  options?: { linkUserId?: string },
+): {
   authorizationUrl: string;
   flowCookie: string;
 } {
@@ -37,6 +47,7 @@ export function createOAuthAuthorization(provider: OAuthProvider, returnTo: stri
     nonce: randomBytes(32).toString('base64url'),
     returnTo: safeReturnTo(returnTo),
     exp: Math.floor(Date.now() / 1000) + FLOW_TTL_SECONDS,
+    ...(options?.linkUserId ? { link: options.linkUserId } : {}),
   };
   return {
     authorizationUrl: provider === 'google'

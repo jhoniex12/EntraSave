@@ -6,6 +6,7 @@ import {
   EmptyAuthSchema,
   SignInSchema,
   SignUpSchema,
+  UnlinkProviderSchema,
 } from '@/schemas/auth.schema';
 import { setSessionCookie, clearSessionCookie } from '@/utils/session-cookie';
 import { requireAuth } from '@/utils/require-auth';
@@ -58,6 +59,27 @@ export const logout = defineRoute({
     action: 'auth.logout',
     resourceType: 'session',
     targetUserId: ctx.userId,
+  }),
+});
+
+/**
+ * Disconnect a linked OAuth provider from the current account. The service
+ * refuses to remove the last remaining sign-in method, so an account can never
+ * be locked out by unlinking.
+ */
+export const unlinkProvider = defineRoute({
+  name: 'auth.unlink',
+  rateLimit: 'auth.unlink',
+  schema: UnlinkProviderSchema,
+  handler: async ({ ctx, input }) => {
+    await authService.unlinkProvider(ctx.userId, input.provider);
+    return { provider: input.provider, unlinked: true as const };
+  },
+  audit: ({ ctx, input }) => ({
+    action: 'auth.unlink',
+    resourceType: 'user',
+    targetUserId: ctx.userId,
+    metadata: { provider: input.provider },
   }),
 });
 

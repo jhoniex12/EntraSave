@@ -14,7 +14,7 @@ Project guidance:
 
 - Credential, Google, and Facebook sign-in
 - Account creation, editing, opening balances, archiving, and deletion
-- Income, expense, and transfer transactions
+- Income and expense transactions
 - Transaction editing, deletion, monthly navigation, and category filtering
 - Manual monthly starting balances
 - Ordered categories and monthly category budgets

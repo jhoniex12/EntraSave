@@ -77,7 +77,7 @@ export function DashboardPage() {
         <StatCard label={period === 'month' ? 'Net this month' : `Net in ${currentYear}`} value={formatMoney(period === 'month' ? summary.netThisMonth : summary.yearToDate.net, currency)} tone={Number(period === 'month' ? summary.netThisMonth : summary.yearToDate.net) >= 0 ? 'positive' : 'negative'} />
       </div>
 
-      <CategorySummary items={period === 'month' ? summary.categoryBreakdown : summary.yearToDateCategoryBreakdown} names={categoryName} budgets={period === 'month' ? budgets : []} currency={currency} periodLabel={period} />
+      <CategorySummary items={period === 'month' ? summary.categoryBreakdown : summary.yearToDateCategoryBreakdown} names={categoryName} budgets={budgets} currency={currency} periodLabel={period} showBudget={period === 'month'} />
 
       {period === 'year' && <section className="rounded-3xl border border-neutral-200/80 bg-gradient-to-br from-white via-white to-emerald-50/50 p-5 shadow-lg shadow-neutral-200/40 sm:p-7">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

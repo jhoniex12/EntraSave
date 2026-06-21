@@ -2,6 +2,7 @@ import { defineRoute } from '@/utils/define-route';
 import { transactionService } from '@/services/transaction.service';
 import {
   CreateTransactionSchema,
+  CreateTransferSchema,
   UpdateTransactionSchema,
   DeleteTransactionSchema,
   ListTransactionsSchema,
@@ -43,6 +44,25 @@ export const createTransaction = defineRoute({
     resourceId: output.id,
     // Redacted: type/account only — NEVER the amount (docs/ARCHITECTURE.md §14).
     metadata: { type: output.type, accountId: output.accountId },
+  }),
+});
+
+export const createTransfer = defineRoute({
+  name: 'transaction.transfer',
+  permission: 'transactions.write',
+  rateLimit: 'transaction.create',
+  schema: CreateTransferSchema,
+  handler: ({ ctx, input }) => transactionService.createTransfer(ctx, input),
+  audit: ({ output }) => ({
+    action: 'transaction.transfer',
+    resourceType: 'transaction',
+    resourceId: output.out.id,
+    // Redacted: never the amount. Records the linked legs + accounts only.
+    metadata: {
+      transferId: output.out.transferId,
+      fromAccountId: output.out.accountId,
+      toAccountId: output.in.accountId,
+    },
   }),
 });
 

@@ -15,6 +15,8 @@ export interface CreateTransactionData {
   description?: string;
   notes?: string;
   occurredAt: Date;
+  /** When set, a repeat create with the same (userId, key) returns the original row. */
+  idempotencyKey?: string;
 }
 
 export interface UpdateTransactionData {
@@ -23,6 +25,24 @@ export interface UpdateTransactionData {
   description?: string | null;
   notes?: string | null;
   occurredAt?: Date;
+}
+
+export interface CreateTransferData {
+  userId: string;
+  fromAccountId: string;
+  toAccountId: string;
+  amount: string;
+  currency: string;
+  description?: string;
+  occurredAt: Date;
+  /** When set, a repeat create with the same (userId, key) returns the original legs. */
+  idempotencyKey?: string;
+}
+
+/** The two atomic legs of a transfer: outflow on the source, inflow on the destination. */
+export interface TransferLegs {
+  out: Transaction;
+  in: Transaction;
 }
 
 export interface ListTransactionsParams {
@@ -61,6 +81,8 @@ export interface MonthCategorySummary {
 
 export interface TransactionRepository {
   create(data: CreateTransactionData): Promise<Transaction>;
+  /** Atomically create both legs of a transfer; idempotent on (userId, key). */
+  createTransfer(data: CreateTransferData): Promise<TransferLegs>;
   findByIdForUser(userId: string, id: string): Promise<Transaction | null>;
   list(params: ListTransactionsParams): Promise<Transaction[]>;
   /**

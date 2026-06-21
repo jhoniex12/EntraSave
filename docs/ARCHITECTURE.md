@@ -237,7 +237,7 @@ Row ownership is enforced independently in repository predicates using
 - `Account`: user-owned account, type, currency, opening balance, archive and
   soft-delete state.
 - `Category`: ordered user-owned income/expense category.
-- `Transaction`: income, expense, or transfer activity associated with an
+- `Transaction`: income or expense activity associated with an
   account and optional category.
 - `Budget`: reusable monthly limit for an expense category.
 - `MonthlyBalance`: optional user-set starting balance for a zero-based

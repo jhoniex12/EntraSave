@@ -14,6 +14,8 @@ export interface CreateAccountData {
   type: Account['type'];
   currency: string;
   openingBalance: string;
+  /** When set, a repeat create with the same (userId, key) returns the original row. */
+  idempotencyKey?: string;
 }
 
 export interface UpdateAccountData {
@@ -33,6 +35,8 @@ export interface AccountFinancialSummaryRecord {
 
 export interface AccountRepository {
   create(data: CreateAccountData): Promise<Account>;
+  /** True when the user already has at least one (non-deleted) account. */
+  hasAccounts(userId: string): Promise<boolean>;
   findByIdForUser(userId: string, id: string): Promise<Account | null>;
   listForUser(userId: string, includeArchived: boolean): Promise<Account[]>;
   listSummariesForUser(

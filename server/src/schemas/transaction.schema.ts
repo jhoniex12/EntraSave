@@ -4,7 +4,7 @@ import { z } from 'zod';
  * Transactions — Zod validation layer (ARCHITECTURE.md §8). Money is accepted as
  * a bounded decimal STRING (never a float). All strings are length-capped.
  */
-export const TRANSACTION_TYPES = ['INCOME', 'EXPENSE', 'TRANSFER'] as const;
+export const TRANSACTION_TYPES = ['INCOME', 'EXPENSE'] as const;
 
 export const CreateTransactionSchema = z.object({
   accountId: z.string().cuid(),
@@ -18,8 +18,32 @@ export const CreateTransactionSchema = z.object({
   description: z.string().trim().max(200).optional(),
   notes: z.string().trim().max(1000).optional(),
   occurredAt: z.coerce.date(),
+  // Optional client-generated key so a retried create (double-click, refresh,
+  // timeout) returns the original transaction instead of inserting a duplicate.
+  idempotencyKey: z.string().uuid().optional(),
 });
 export type CreateTransactionInput = z.infer<typeof CreateTransactionSchema>;
+
+/**
+ * A transfer moves money between two of the user's own accounts. It is recorded
+ * as two atomic legs (TRANSFER_OUT + TRANSFER_IN), so the create input names both
+ * accounts rather than a single account + category.
+ */
+export const CreateTransferSchema = z.object({
+  fromAccountId: z.string().cuid(),
+  toAccountId: z.string().cuid(),
+  amount: z
+    .string()
+    .trim()
+    .regex(/^\d{1,15}(\.\d{1,4})?$/, 'Invalid amount'), // positive decimal, <=4dp
+  description: z.string().trim().max(200).optional(),
+  occurredAt: z.coerce.date(),
+  idempotencyKey: z.string().uuid().optional(),
+}).refine((value) => value.fromAccountId !== value.toAccountId, {
+  message: 'Choose two different accounts',
+  path: ['toAccountId'],
+});
+export type CreateTransferInput = z.infer<typeof CreateTransferSchema>;
 
 export const UpdateTransactionSchema = z.object({
   id: z.string().cuid(),

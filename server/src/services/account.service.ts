@@ -24,12 +24,18 @@ export class AccountService {
   constructor(private readonly repo: AccountRepository) {}
 
   async create(ctx: AuthContext, input: CreateAccountInput): Promise<AccountDTO> {
+    // EntraSave uses a single currency per user (the base currency in Settings).
+    // Only the very first account may choose a currency; every later account is
+    // forced to the base currency so a direct API call can't introduce a second
+    // one. The client mirrors this rule, but the server is authoritative.
+    const currency = (await this.repo.hasAccounts(ctx.userId)) ? ctx.baseCurrency : input.currency;
     const account = await this.repo.create({
       userId: ctx.userId,
       name: input.name,
       type: input.type,
-      currency: input.currency,
+      currency,
       openingBalance: input.openingBalance,
+      idempotencyKey: input.idempotencyKey,
     });
     return toAccountDTO(account);
   }

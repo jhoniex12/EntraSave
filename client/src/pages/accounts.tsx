@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api';
 import type { AccountSummaryDTO } from '@/lib/types';
@@ -73,7 +73,7 @@ export function AccountsPage() {
       </section>
 
       {dialog?.kind === 'create' && (
-        <AccountForm title="New account" defaultCurrency={user?.baseCurrency ?? 'AUD'} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); void load(); }} />
+        <AccountForm title="New account" defaultCurrency={user?.baseCurrency ?? 'AUD'} isFirstAccount={accounts.length === 0} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); void load(); }} />
       )}
       {dialog?.kind === 'edit' && (
         <AccountForm title="Edit account" account={dialog.account} onDelete={() => setDialog({ kind: 'delete', account: dialog.account })} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); void load(); }} />
@@ -87,16 +87,24 @@ export function AccountsPage() {
 
 const inputClass = 'mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100';
 
-function AccountForm({ title, account, defaultCurrency = 'AUD', onDelete, onClose, onSaved }: {
+function AccountForm({ title, account, defaultCurrency = 'AUD', isFirstAccount = false, onDelete, onClose, onSaved }: {
   title: string;
   account?: AccountSummaryDTO;
   defaultCurrency?: string;
+  /** Only the very first account lets the user pick the currency; that choice
+   *  becomes the single base currency (Settings). Later accounts inherit it. */
+  isFirstAccount?: boolean;
   onDelete?: () => void;
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { refresh } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // One key per open form so a retried create (double-click, refresh, timeout)
+  // returns the original account instead of inserting a duplicate.
+  const idempotencyKey = useRef('');
+  if (!idempotencyKey.current) idempotencyKey.current = crypto.randomUUID();
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -113,12 +121,21 @@ function AccountForm({ title, account, defaultCurrency = 'AUD', onDelete, onClos
           isArchived: f.get('isArchived') === 'on',
         });
       } else {
+        // Only the first account offers a currency choice; every other account
+        // inherits the single base currency from Settings.
+        const currency = isFirstAccount ? String(f.get('currency')) : defaultCurrency;
         await api.accounts.create({
           name: String(f.get('name')),
           type: String(f.get('type')),
-          currency: String(f.get('currency')),
+          currency,
           openingBalance: String(f.get('openingBalance') || '0'),
+          idempotencyKey: idempotencyKey.current,
         });
+        // The first-account choice sets the base currency so Settings reflects it.
+        if (isFirstAccount && currency !== defaultCurrency) {
+          await api.users.updateCurrency({ currency });
+          await refresh();
+        }
       }
       onSaved();
     } catch (err) {
@@ -137,16 +154,17 @@ function AccountForm({ title, account, defaultCurrency = 'AUD', onDelete, onClos
         </label>
         <label className="block text-sm font-medium text-neutral-700">
           Account category
-          <select name="type" defaultValue={account?.type ?? 'CHECKING'} className="mt-1.5 min-h-12 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">
+          <select name="type" defaultValue={account?.type ?? 'SAVINGS'} className="mt-1.5 min-h-12 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">
             {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{accountTypeLabel(t)}</option>)}
           </select>
         </label>
-        {!account && (
+        {!account && isFirstAccount && (
           <label className="block text-sm font-medium text-neutral-700">
             Currency
             <select name="currency" defaultValue={defaultCurrency} className="mt-1.5 min-h-12 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">
               {SUPPORTED_CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
             </select>
+            <span className="mt-1.5 block text-xs font-normal text-neutral-400">This sets your currency for EntraSave. You can change it later in Settings.</span>
           </label>
         )}
         <label className="block text-sm font-medium text-neutral-700">
@@ -210,7 +228,7 @@ function DeleteAccount({ account, onClose, onDeleted }: {
         This soft-deletes <strong>{account.name}</strong> and its transactions. Type the account
         name to confirm.
       </p>
-      <input value={confirmation} onChange={(e) => setConfirmation(e.target.value)} placeholder={account.name} className={`${inputClass} mt-3`} />
+      <input value={confirmation} onChange={(e) => setConfirmation(e.target.value)} placeholder={account.name} maxLength={80} className={`${inputClass} mt-3`} />
       {error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
       <button disabled={pending || confirmation !== account.name} onClick={onDelete} className="mt-4 w-full rounded-lg bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50">
         {pending ? 'Deleting…' : 'Delete account'}

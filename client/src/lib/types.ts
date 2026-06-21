@@ -86,6 +86,7 @@ export interface TransactionDTO {
   currency: string;
   description: string | null;
   notes: string | null;
+  transferId: string | null;
   occurredAt: string;
   createdAt: string;
   updatedAt: string;
@@ -134,12 +135,9 @@ export interface DashboardSummaryDTO {
 }
 
 export const ACCOUNT_TYPES = [
-  'CHECKING',
   'SAVINGS',
   'CASH',
-  'CREDIT_CARD',
-  'INVESTMENT',
   'OTHER',
 ] as const;
 
-export const TRANSACTION_TYPES = ['INCOME', 'EXPENSE', 'TRANSFER'] as const;
+export const TRANSACTION_TYPES = ['INCOME', 'EXPENSE'] as const;

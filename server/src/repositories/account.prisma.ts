@@ -14,15 +14,43 @@ import type {
  */
 class PrismaAccountRepository implements AccountRepository {
   async create(data: CreateAccountData): Promise<Account> {
-    return prisma.account.create({
-      data: {
-        userId: data.userId,
-        name: data.name,
-        type: data.type,
-        currency: data.currency,
-        balance: data.openingBalance, // Prisma coerces the string into Decimal(19,4)
-      },
+    // Idempotent create: a retried submit with the same key returns the row the
+    // first request inserted instead of a duplicate account. Pre-check, then fall
+    // back to re-reading on the unique-index race.
+    if (data.idempotencyKey) {
+      const existing = await this.findByIdempotencyKey(data.userId, data.idempotencyKey);
+      if (existing) return existing;
+    }
+    try {
+      return await prisma.account.create({
+        data: {
+          userId: data.userId,
+          name: data.name,
+          type: data.type,
+          currency: data.currency,
+          balance: data.openingBalance, // Prisma coerces the string into Decimal(19,4)
+          idempotencyKey: data.idempotencyKey,
+        },
+      });
+    } catch (error) {
+      if (data.idempotencyKey && isUniqueConstraintError(error)) {
+        const existing = await this.findByIdempotencyKey(data.userId, data.idempotencyKey);
+        if (existing) return existing;
+      }
+      throw error;
+    }
+  }
+
+  private findByIdempotencyKey(userId: string, idempotencyKey: string): Promise<Account | null> {
+    return prisma.account.findFirst({ where: { userId, idempotencyKey } });
+  }
+
+  async hasAccounts(userId: string): Promise<boolean> {
+    const existing = await prisma.account.findFirst({
+      where: { userId, deletedAt: null },
+      select: { id: true },
     });
+    return existing !== null;
   }
 
   async findByIdForUser(userId: string, id: string): Promise<Account | null> {
@@ -61,7 +89,9 @@ class PrismaAccountRepository implements AccountRepository {
         where: {
           userId,
           deletedAt: null,
-          type: { in: ['INCOME', 'EXPENSE'] },
+          // Transfer legs move money between accounts, so they count toward each
+          // account's running balance (but never toward income/expense totals).
+          type: { in: ['INCOME', 'EXPENSE', 'TRANSFER_IN', 'TRANSFER_OUT'] },
           occurredAt: { lt: monthEnd },
           account: accountWhere,
         },
@@ -86,7 +116,12 @@ class PrismaAccountRepository implements AccountRepository {
       const month = monthly.get(account.id) ?? zeroSummary();
       return {
         account,
-        currentBalance: account.balance.plus(total.income).minus(total.expense).toString(),
+        currentBalance: account.balance
+          .plus(total.income)
+          .plus(total.transferIn)
+          .minus(total.expense)
+          .minus(total.transferOut)
+          .toString(),
         incomeThisMonth: month.income.toString(),
         expenseThisMonth: month.expense.toString(),
         netThisMonth: month.income.minus(month.expense).toString(),
@@ -128,10 +163,27 @@ class PrismaAccountRepository implements AccountRepository {
       if (account.count === 0) {
         throw new Error('ACCOUNT_NOT_FOUND');
       }
+      // Transfers touching this account have a paired leg on a DIFFERENT account.
+      // Collect those transfer ids first so we can also remove the counterpart
+      // legs and never leave a one-sided transfer behind.
+      const transferLegs = await tx.transaction.findMany({
+        where: { accountId: id, userId, deletedAt: null, transferId: { not: null } },
+        select: { transferId: true },
+      });
+      const transferIds = transferLegs
+        .map((leg) => leg.transferId)
+        .filter((value): value is string => value !== null);
+
       const transactions = await tx.transaction.updateMany({
         where: { accountId: id, userId, deletedAt: null },
         data: { deletedAt },
       });
+      if (transferIds.length > 0) {
+        await tx.transaction.updateMany({
+          where: { userId, transferId: { in: transferIds }, deletedAt: null },
+          data: { deletedAt },
+        });
+      }
       return { accountCount: account.count, transactionCount: transactions.count };
     });
   }
@@ -140,6 +192,8 @@ class PrismaAccountRepository implements AccountRepository {
 interface DecimalSummary {
   income: Prisma.Decimal;
   expense: Prisma.Decimal;
+  transferIn: Prisma.Decimal;
+  transferOut: Prisma.Decimal;
 }
 
 function aggregateByAccount(
@@ -148,15 +202,27 @@ function aggregateByAccount(
   const summaries = new Map<string, DecimalSummary>();
   for (const row of rows) {
     const summary = summaries.get(row.accountId) ?? zeroSummary();
-    if (row.type === 'INCOME') summary.income = row._sum.amount ?? new Prisma.Decimal(0);
-    if (row.type === 'EXPENSE') summary.expense = row._sum.amount ?? new Prisma.Decimal(0);
+    const amount = row._sum.amount ?? new Prisma.Decimal(0);
+    if (row.type === 'INCOME') summary.income = amount;
+    if (row.type === 'EXPENSE') summary.expense = amount;
+    if (row.type === 'TRANSFER_IN') summary.transferIn = amount;
+    if (row.type === 'TRANSFER_OUT') summary.transferOut = amount;
     summaries.set(row.accountId, summary);
   }
   return summaries;
 }
 
 function zeroSummary(): DecimalSummary {
-  return { income: new Prisma.Decimal(0), expense: new Prisma.Decimal(0) };
+  return {
+    income: new Prisma.Decimal(0),
+    expense: new Prisma.Decimal(0),
+    transferIn: new Prisma.Decimal(0),
+    transferOut: new Prisma.Decimal(0),
+  };
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
 }
 
 export const accountRepository: AccountRepository = new PrismaAccountRepository();

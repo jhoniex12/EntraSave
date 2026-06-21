@@ -3,8 +3,11 @@ import { prisma } from '@/config/prisma';
 import type {
   AuthAccountRecord,
   AuthRepository,
+  LinkProviderResult,
   OAuthIdentityData,
+  UnlinkProviderResult,
 } from '@/repositories/auth.repository';
+import type { OAuthProvider } from '@/schemas/auth.schema';
 
 const accountSelect = {
   id: true,
@@ -128,6 +131,67 @@ class PrismaAuthRepository implements AuthRepository {
       }
       throw error;
     }
+  }
+
+  async linkOAuthProvider(input: {
+    userId: string;
+    provider: OAuthProvider;
+    providerId: string;
+  }): Promise<LinkProviderResult> {
+    const { userId, provider, providerId } = input;
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const user = await tx.user.findFirst({
+          where: { id: userId, deletedAt: null },
+          select: { googleId: true, facebookId: true },
+        });
+        if (!user) return 'not_found';
+
+        const current = provider === 'google' ? user.googleId : user.facebookId;
+        // Already attached to this exact identity → idempotent success. A
+        // different identity for the same provider must be disconnected first.
+        if (current) return current === providerId ? 'linked' : 'already_connected';
+
+        const taken = await tx.user.findFirst({
+          where: provider === 'google' ? { googleId: providerId } : { facebookId: providerId },
+          select: { id: true },
+        });
+        if (taken && taken.id !== userId) return 'provider_taken';
+
+        await tx.user.update({
+          where: { id: userId },
+          data: provider === 'google' ? { googleId: providerId } : { facebookId: providerId },
+        });
+        return 'linked';
+      });
+    } catch (error) {
+      // Lost a race to another linker claiming the same provider identity.
+      if (isUniqueConstraintError(error)) return 'provider_taken';
+      throw error;
+    }
+  }
+
+  async unlinkOAuthProvider(userId: string, provider: OAuthProvider): Promise<UnlinkProviderResult> {
+    return prisma.$transaction(async (tx) => {
+      const user = await tx.user.findFirst({
+        where: { id: userId, deletedAt: null },
+        select: { passwordHash: true, googleId: true, facebookId: true },
+      });
+      if (!user) return 'not_found';
+
+      const current = provider === 'google' ? user.googleId : user.facebookId;
+      if (!current) return 'not_connected';
+
+      // Never strand an account with no way back in.
+      const otherProvider = provider === 'google' ? user.facebookId : user.googleId;
+      if (!user.passwordHash && !otherProvider) return 'last_method';
+
+      await tx.user.update({
+        where: { id: userId },
+        data: provider === 'google' ? { googleId: null } : { facebookId: null },
+      });
+      return 'unlinked';
+    });
   }
 
   async incrementSessionVersion(userId: string): Promise<void> {

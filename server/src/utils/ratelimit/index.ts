@@ -35,6 +35,7 @@ export const RATE_LIMITS = {
   'auth.signin': { limit: 10, windowMs: 15 * 60_000 },
   'auth.signup': { limit: 5, windowMs: 60 * 60_000 },
   'auth.oauth': { limit: 20, windowMs: 15 * 60_000 },
+  'auth.unlink': { limit: 10, windowMs: 60_000 },
   'auth.logout': { limit: 10, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimitPolicy>;
 

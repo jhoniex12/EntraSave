@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api';
@@ -31,6 +31,25 @@ export function TransactionsPage() {
 
   const categoryName = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories]);
   const accountName = useMemo(() => new Map(accounts.map((a) => [a.id, a.name])), [accounts]);
+  // For each transfer leg, the name of the account on the other side, so the
+  // list can read "Transfer to/from <account>".
+  const transferCounterName = useMemo(() => {
+    const byTransfer = new Map<string, TransactionDTO[]>();
+    for (const t of data?.items ?? []) {
+      if (!t.transferId) continue;
+      const legs = byTransfer.get(t.transferId) ?? [];
+      legs.push(t);
+      byTransfer.set(t.transferId, legs);
+    }
+    const counter = new Map<string, string>();
+    for (const legs of byTransfer.values()) {
+      for (const leg of legs) {
+        const other = legs.find((l) => l.id !== leg.id);
+        if (other) counter.set(leg.id, accountName.get(other.accountId) ?? 'another account');
+      }
+    }
+    return counter;
+  }, [data, accountName]);
 
   const loadMonth = useCallback(async () => {
     setError(null);
@@ -85,6 +104,17 @@ export function TransactionsPage() {
     }
   }
 
+  // When filtered to one category, summarise just that category for the month:
+  // its total (server already scopes categorySummary to the filter) and, if it's
+  // a budgeted expense category, its budget usage.
+  const filteredCategory = categoryId ? categories.find((c) => c.id === categoryId) : null;
+  const filteredRows = categoryId && data ? data.categorySummary.filter((s) => s.categoryId === categoryId) : [];
+  const filteredTotal = filteredRows.length === 1 && filteredRows[0]
+    ? filteredRows[0].amount
+    : String(filteredRows.reduce((sum, s) => sum + Number(s.amount), 0));
+  const filteredKind = filteredRows[0]?.type ?? filteredCategory?.kind;
+  const filteredBudget = categoryId ? budgets.find((b) => b.categoryId === categoryId) : undefined;
+
   return (
     <div className="space-y-8 pb-10">
       <section className="relative overflow-hidden rounded-3xl bg-neutral-950 px-5 py-6 text-white shadow-xl shadow-neutral-200/70 sm:px-8 sm:py-8"><div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-emerald-500/20 blur-3xl" /><div className="relative"><div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Activity overview</div><h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Every transaction, in context.</h1><p className="mt-2 max-w-2xl text-sm text-neutral-400 sm:text-base">Record money in and out, review monthly totals, and understand your spending by category.</p></div></section>
@@ -118,6 +148,26 @@ export function TransactionsPage() {
         {categoryId && <button onClick={() => setCategoryId('')} className="min-h-11 rounded-lg border border-neutral-200 px-3 py-2 text-sm text-neutral-600">Clear filter</button>}
       </div>
 
+      {categoryId && data && (
+        <div className="mb-5 rounded-xl border border-neutral-200 bg-neutral-50/70 p-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-sm font-medium text-neutral-700">{filteredCategory?.name ?? 'Category'} this month</span>
+            <span className={`text-base font-semibold tabular-nums ${filteredKind === 'INCOME' ? 'text-emerald-600' : 'text-rose-500'}`}>{filteredKind === 'INCOME' ? '+' : '-'}{formatMoney(filteredTotal, currency)}</span>
+          </div>
+          {filteredBudget && (
+            <div className="mt-3">
+              <div className="mb-1 flex items-center justify-between text-xs text-neutral-500">
+                <span>Budget</span>
+                <span className="tabular-nums">{formatMoney(filteredBudget.spentAmount, currency)} of {formatMoney(filteredBudget.budgetAmount, currency)} ({filteredBudget.usagePercent.toFixed(0)}%)</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-neutral-200">
+                <div className={`h-full rounded-full ${filteredBudget.status === 'OVER' ? 'bg-rose-500' : filteredBudget.status === 'NEAR' ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(filteredBudget.usagePercent, 100)}%` }} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="overflow-hidden border-t border-neutral-100 pt-3">
         {loading ? (
           <p className="p-6 text-sm text-neutral-500">Loading…</p>
@@ -126,17 +176,22 @@ export function TransactionsPage() {
         ) : (
           <ul className="space-y-1">
             {data.items.map((t) => {
-              const isExpense = t.type === 'EXPENSE';
+              const isTransferLeg = t.type === 'TRANSFER_OUT' || t.type === 'TRANSFER_IN';
+              const isOutflow = t.type === 'EXPENSE' || t.type === 'TRANSFER_OUT';
               const category = t.categoryId ? categoryName.get(t.categoryId) : null;
+              const counter = transferCounterName.get(t.id);
+              const label = isTransferLeg
+                ? (t.description || (t.type === 'TRANSFER_OUT' ? `Transfer to ${counter ?? 'another account'}` : `Transfer from ${counter ?? 'another account'}`))
+                : (t.description ?? category ?? t.type);
               return (
                 <li key={t.id} className="group flex items-center justify-between gap-3 rounded-2xl px-2 py-3 transition hover:bg-neutral-50 sm:px-3">
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm transition group-hover:scale-105 ${isExpense ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-600'}`}>{isExpense ? '↑' : '↓'}</span>
-                    <div className="min-w-0"><p className="truncate text-sm font-medium text-neutral-800">{t.description ?? category ?? t.type}</p><p className="flex min-w-0 items-center gap-1.5 text-xs text-neutral-400">{category && <span className="max-w-32 truncate rounded-full bg-neutral-100 px-2 py-0.5 text-neutral-600">{category}</span>}<span>{new Date(t.occurredAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</span></p></div>
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm transition group-hover:scale-105 ${isTransferLeg ? 'bg-sky-50 text-sky-600' : isOutflow ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-600'}`}>{isTransferLeg ? '⇄' : isOutflow ? '↑' : '↓'}</span>
+                    <div className="min-w-0"><p className="truncate text-sm font-medium text-neutral-800">{label}</p><p className="flex min-w-0 items-center gap-1.5 text-xs text-neutral-400">{isTransferLeg ? <span className="rounded-full bg-sky-50 px-2 py-0.5 text-sky-700">Transfer</span> : category && <span className="max-w-32 truncate rounded-full bg-neutral-100 px-2 py-0.5 text-neutral-600">{category}</span>}<span>{new Date(t.occurredAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</span></p></div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-                    <span className={`text-sm font-semibold tabular-nums ${isExpense ? 'text-rose-500' : 'text-emerald-600'}`}>{isExpense ? '-' : '+'}{formatMoney(t.amount, t.currency)}</span>
-                    <button onClick={() => setEditing(t)} className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-600 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 sm:min-h-0" aria-label={`Edit ${t.description ?? 'transaction'}`}><span aria-hidden="true">✎</span><span className="hidden sm:inline">Edit</span></button>
+                    <span className={`text-sm font-semibold tabular-nums ${isOutflow ? 'text-rose-500' : 'text-emerald-600'}`}>{isOutflow ? '-' : '+'}{formatMoney(t.amount, t.currency)}</span>
+                    <button onClick={() => setEditing(t)} className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-neutral-200 px-2.5 py-1.5 text-xs font-semibold text-neutral-600 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 sm:min-h-0" aria-label={`Edit ${label}`}><span aria-hidden="true">✎</span><span className="hidden sm:inline">Edit</span></button>
                   </div>
                 </li>
               );
@@ -186,6 +241,7 @@ function TransactionEditor({ transaction, accountName, categories, onClose, onSa
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const isTransfer = transaction.type === 'TRANSFER_OUT' || transaction.type === 'TRANSFER_IN';
   const visibleCategories = categories.filter((category) => category.kind === transaction.type);
 
   async function save(e: FormEvent<HTMLFormElement>) {
@@ -196,7 +252,7 @@ function TransactionEditor({ transaction, accountName, categories, onClose, onSa
     try {
       await api.transactions.update({
         id: transaction.id,
-        categoryId: transaction.type === 'TRANSFER' ? null : selectedCategory || null,
+        categoryId: selectedCategory || null,
         amount: String(data.get('amount')),
         description: String(data.get('description') || '') || null,
         occurredAt: new Date(String(data.get('occurredAt'))).toISOString(),
@@ -214,11 +270,19 @@ function TransactionEditor({ transaction, accountName, categories, onClose, onSa
     finally { setPending(false); }
   }
 
-  return <Modal title={confirmingDelete ? 'Delete transaction' : 'Edit transaction'} subtitle={`${accountName} · ${transaction.type.charAt(0) + transaction.type.slice(1).toLowerCase()}`} size="lg" onClose={onClose}>
-    {confirmingDelete ? <div className="space-y-5"><div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><p className="font-semibold">Delete this transaction?</p><p className="mt-1">It will be removed from your transaction history and all balance calculations.</p></div>{error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}<div className="flex justify-end gap-3 border-t border-neutral-100 pt-4"><button type="button" onClick={() => { setConfirmingDelete(false); setError(null); }} disabled={pending} className="min-h-11 rounded-xl border border-neutral-300 px-4 text-sm font-semibold text-neutral-700">Cancel</button><button type="button" onClick={() => void remove()} disabled={pending} className="min-h-11 rounded-xl bg-rose-600 px-5 text-sm font-semibold text-white disabled:opacity-50">{pending ? 'Deleting…' : 'Delete transaction'}</button></div></div> :
+  const typeLabel = isTransfer ? 'Transfer' : transaction.type.charAt(0) + transaction.type.slice(1).toLowerCase();
+
+  return <Modal title={confirmingDelete ? (isTransfer ? 'Delete transfer' : 'Delete transaction') : isTransfer ? 'Transfer' : 'Edit transaction'} subtitle={`${accountName} · ${typeLabel}`} size="lg" onClose={onClose}>
+    {confirmingDelete ? <div className="space-y-5"><div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><p className="font-semibold">Delete this {isTransfer ? 'transfer' : 'transaction'}?</p><p className="mt-1">{isTransfer ? 'Both sides of the transfer are removed from both accounts, together.' : 'It will be removed from your transaction history and all balance calculations.'}</p></div>{error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}<div className="flex justify-end gap-3 border-t border-neutral-100 pt-4"><button type="button" onClick={() => { setConfirmingDelete(false); setError(null); }} disabled={pending} className="min-h-11 rounded-xl border border-neutral-300 px-4 text-sm font-semibold text-neutral-700">Cancel</button><button type="button" onClick={() => void remove()} disabled={pending} className="min-h-11 rounded-xl bg-rose-600 px-5 text-sm font-semibold text-white disabled:opacity-50">{pending ? 'Deleting…' : isTransfer ? 'Delete transfer' : 'Delete transaction'}</button></div></div> :
+    isTransfer ? <div className="space-y-5">
+      <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800"><p className="font-semibold">Transfers can’t be edited.</p><p className="mt-1">A transfer moves money between two accounts as one atomic action. To change it, delete it (both sides are removed) and create a new transfer.</p></div>
+      <dl className="space-y-2 text-sm"><div className="flex justify-between gap-4"><dt className="text-neutral-500">Amount</dt><dd className="font-semibold tabular-nums">{formatMoney(transaction.amount, transaction.currency)}</dd></div><div className="flex justify-between gap-4"><dt className="text-neutral-500">{transaction.type === 'TRANSFER_OUT' ? 'From account' : 'To account'}</dt><dd className="font-medium">{accountName}</dd></div>{transaction.description && <div className="flex justify-between gap-4"><dt className="text-neutral-500">Description</dt><dd className="min-w-0 truncate font-medium">{transaction.description}</dd></div>}<div className="flex justify-between gap-4"><dt className="text-neutral-500">Date</dt><dd className="font-medium">{new Date(transaction.occurredAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</dd></div></dl>
+      {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
+      <div className="flex justify-between gap-3 border-t border-neutral-100 pt-4"><button type="button" onClick={() => { setConfirmingDelete(true); setError(null); }} className="min-h-11 text-sm font-semibold text-rose-600">Delete transfer</button><button type="button" onClick={onClose} disabled={pending} className="min-h-11 rounded-xl border border-neutral-300 px-4 text-sm font-semibold text-neutral-700">Close</button></div>
+    </div> :
     <form onSubmit={save} className="space-y-4">
       <label className="block text-sm font-medium text-neutral-700">Amount<span className="mt-1.5 flex min-h-12 items-center rounded-xl border border-neutral-300 px-3 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100"><span className="pr-2 text-sm font-semibold text-neutral-400">{transaction.currency}</span><input name="amount" inputMode="decimal" required autoFocus defaultValue={transaction.amount} className="min-w-0 flex-1 bg-transparent py-2.5 outline-none" /></span></label>
-      {transaction.type !== 'TRANSFER' && <label className="block text-sm font-medium text-neutral-700"><span className="mb-1.5 flex items-center justify-between gap-3"><span>Category</span><Link to="/settings" className="text-xs font-semibold text-emerald-600 hover:underline">Add or edit categories in Settings →</Link></span><select name="categoryId" required defaultValue={transaction.categoryId ?? visibleCategories[0]?.id ?? ''} className="min-h-12 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">{visibleCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>}
+      <label className="block text-sm font-medium text-neutral-700"><span className="mb-1.5 flex items-center justify-between gap-3"><span>Category</span><Link to="/settings" className="text-xs font-semibold text-emerald-600 hover:underline">Add or edit categories in Settings →</Link></span><select name="categoryId" required defaultValue={transaction.categoryId ?? visibleCategories[0]?.id ?? ''} className="min-h-12 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">{visibleCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
       <label className="block text-sm font-medium text-neutral-700">Description<input name="description" maxLength={200} placeholder="What was this for?" defaultValue={transaction.description ?? ''} className="mt-1.5 min-h-12 w-full rounded-xl border border-neutral-300 px-3 py-2.5 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" /></label>
       <label className="block text-sm font-medium text-neutral-700">Date and time<input name="occurredAt" type="datetime-local" required defaultValue={transaction.occurredAt.slice(0, 16)} className="mt-1.5 min-h-12 w-full rounded-xl border border-neutral-300 px-3 py-2.5 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" /></label>
       {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
@@ -250,9 +314,21 @@ function TransactionForm({ accounts, categories, onClose, onSaved }: {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
+  const [toAccountId, setToAccountId] = useState(accounts[1]?.id ?? '');
   const [type, setType] = useState('EXPENSE');
+  // One key per open form = one logical create. Retries of this submit (double-
+  // click, refresh, timeout) reuse it so the server dedupes instead of inserting
+  // a duplicate transaction (or transfer).
+  const idempotencyKey = useRef('');
+  if (!idempotencyKey.current) idempotencyKey.current = crypto.randomUUID();
+  const isTransfer = type === 'TRANSFER';
   const visibleCategories = categories.filter((category) => category.kind === type);
   const selectedCurrency = accounts.find((account) => account.id === accountId)?.currency ?? '';
+  // The destination must differ from the source; keep the selection valid.
+  const toOptions = accounts.filter((account) => account.id !== accountId);
+  const effectiveToAccountId = toOptions.some((account) => account.id === toAccountId)
+    ? toAccountId
+    : (toOptions[0]?.id ?? '');
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -281,14 +357,26 @@ function TransactionForm({ accounts, categories, onClose, onSaved }: {
     const f = new FormData(e.currentTarget);
     const categoryId = String(f.get('categoryId') || '');
     try {
-      await api.transactions.create({
-        accountId: String(f.get('accountId')),
-        type: String(f.get('type')),
-        amount: String(f.get('amount')),
-        categoryId: categoryId || undefined,
-        description: String(f.get('description') || '') || undefined,
-        occurredAt: new Date(String(f.get('occurredAt'))).toISOString(),
-      });
+      if (isTransfer) {
+        await api.transactions.transfer({
+          fromAccountId: accountId,
+          toAccountId: effectiveToAccountId,
+          amount: String(f.get('amount')),
+          description: String(f.get('description') || '') || undefined,
+          occurredAt: new Date(String(f.get('occurredAt'))).toISOString(),
+          idempotencyKey: idempotencyKey.current,
+        });
+      } else {
+        await api.transactions.create({
+          accountId: String(f.get('accountId')),
+          type: String(f.get('type')),
+          amount: String(f.get('amount')),
+          categoryId: categoryId || undefined,
+          description: String(f.get('description') || '') || undefined,
+          occurredAt: new Date(String(f.get('occurredAt'))).toISOString(),
+          idempotencyKey: idempotencyKey.current,
+        });
+      }
       onSaved();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to save.');
@@ -308,11 +396,15 @@ function TransactionForm({ accounts, categories, onClose, onSaved }: {
 
         <form onSubmit={onSubmit} className="space-y-4 px-6 py-5">
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block"><span className="mb-1.5 block text-sm font-medium text-neutral-700">Account</span><select name="accountId" value={accountId} onChange={(event) => setAccountId(event.target.value)} required className="min-h-12 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-neutral-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">{accounts.map((account) => <option key={account.id} value={account.id}>{account.name} ({account.currency})</option>)}</select></label>
-            <label className="block"><span className="mb-1.5 block text-sm font-medium text-neutral-700">Type</span><select name="type" value={type} onChange={(event) => setType(event.target.value)} className="min-h-12 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-neutral-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"><option value="EXPENSE">Expense · money out</option><option value="INCOME">Income · money in</option><option value="TRANSFER">Transfer</option></select></label>
+            <label className="block"><span className="mb-1.5 block text-sm font-medium text-neutral-700">{isTransfer ? 'From account' : 'Account'}</span><select name="accountId" value={accountId} onChange={(event) => setAccountId(event.target.value)} required className="min-h-12 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-neutral-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">{accounts.map((account) => <option key={account.id} value={account.id}>{account.name} ({account.currency})</option>)}</select></label>
+            <label className="block"><span className="mb-1.5 block text-sm font-medium text-neutral-700">Type</span><select name="type" value={type} onChange={(event) => setType(event.target.value)} className="min-h-12 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-neutral-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"><option value="EXPENSE">Expense · money out</option><option value="INCOME">Income · money in</option>{accounts.length >= 2 && <option value="TRANSFER">Transfer · between accounts</option>}</select></label>
           </div>
 
-          {type !== 'TRANSFER' && <label className="block"><span className="mb-1.5 flex items-center justify-between gap-3 text-sm font-medium text-neutral-700"><span>Category</span><Link to="/settings" className="text-xs font-semibold text-emerald-600 transition hover:text-emerald-700 hover:underline">Add or edit categories in Settings →</Link></span><select name="categoryId" required className="min-h-12 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-neutral-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">{visibleCategories.length === 0 && <option value="">No categories available — add one in Settings</option>}{visibleCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>}
+          {isTransfer ? (
+            <label className="block"><span className="mb-1.5 block text-sm font-medium text-neutral-700">To account</span><select value={effectiveToAccountId} onChange={(event) => setToAccountId(event.target.value)} required className="min-h-12 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-neutral-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">{toOptions.map((account) => <option key={account.id} value={account.id}>{account.name} ({account.currency})</option>)}</select></label>
+          ) : (
+            <label className="block"><span className="mb-1.5 flex items-center justify-between gap-3 text-sm font-medium text-neutral-700"><span>Category</span><Link to="/settings" className="text-xs font-semibold text-emerald-600 transition hover:text-emerald-700 hover:underline">Add or edit categories in Settings →</Link></span><select name="categoryId" required className="min-h-12 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-neutral-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">{visibleCategories.length === 0 && <option value="">No categories available — add one in Settings</option>}{visibleCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+          )}
 
           <label className="block"><span className="mb-1.5 block text-sm font-medium text-neutral-700">Amount</span><div className="flex min-h-12 items-center rounded-xl border border-neutral-300 px-3 transition focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100"><span className="select-none pr-2 text-sm font-semibold text-neutral-400">{selectedCurrency || '—'}</span><input name="amount" inputMode="decimal" placeholder="0.00" autoFocus required className="min-w-0 flex-1 bg-transparent py-2.5 text-neutral-900 outline-none" /></div></label>
           <label className="block"><span className="mb-1.5 block text-sm font-medium text-neutral-700">Description <span className="font-normal text-neutral-400">(optional)</span></span><input name="description" placeholder="What was this for?" maxLength={200} className="min-h-12 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" /></label>
