@@ -28,7 +28,7 @@ export const transactionMonth = defineRoute({
   rateLimit: 'transaction.list',
   schema: GetMonthSchema,
   handler: ({ ctx, input }) =>
-    transactionService.getMonth(ctx, input.year, input.month, input.categoryId),
+    transactionService.getMonth(ctx, input.year, input.month, input.categoryId, input.accountId, input.period, input.cursor),
   audit: false,
 });
 

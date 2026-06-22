@@ -103,6 +103,7 @@ export interface TransactionRepository {
     from: Date,
     to: Date,
     categoryId?: string,
+    accountId?: string,
   ): Promise<MonthCategorySummary[]>;
   update(userId: string, id: string, data: UpdateTransactionData): Promise<Transaction>;
   softDelete(userId: string, id: string): Promise<number>;

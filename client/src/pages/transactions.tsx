@@ -24,7 +24,10 @@ export function TransactionsPage() {
   const [categories, setCategories] = useState<CategoryDTO[]>([]);
   const [budgets, setBudgets] = useState<BudgetStatusDTO[]>([]);
   const [categoryId, setCategoryId] = useState(searchParams.get('category') ?? '');
+  const [accountId, setAccountId] = useState(searchParams.get('account') ?? '');
+  const [period, setPeriod] = useState<'month' | 'year'>(searchParams.get('period') === 'year' ? 'year' : 'month');
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<TransactionDTO | null>(null);
@@ -55,7 +58,7 @@ export function TransactionsPage() {
     setError(null);
     try {
       const [monthData, budgetData] = await Promise.all([
-        api.transactions.month({ year, month, categoryId: categoryId || undefined }),
+        api.transactions.month({ year, month, categoryId: categoryId || undefined, accountId: accountId || undefined, period }),
         api.budgets.status({ year, month }),
       ]);
       setData(monthData);
@@ -65,7 +68,21 @@ export function TransactionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [year, month, categoryId]);
+  }, [year, month, categoryId, accountId, period]);
+
+  async function loadMore() {
+    if (!data?.nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const next = await api.transactions.month({ year, month, categoryId: categoryId || undefined, accountId: accountId || undefined, period, cursor: data.nextCursor });
+      setData((prev) => (prev ? { ...next, items: [...prev.items, ...next.items] } : next));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to load more transactions.');
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     Promise.all([api.accounts.list(false), api.categories.list()])
@@ -86,10 +103,13 @@ export function TransactionsPage() {
     const next = new URLSearchParams();
     next.set('month', `${year}-${String(month + 1).padStart(2, '0')}`);
     if (categoryId) next.set('category', categoryId);
+    if (accountId) next.set('account', accountId);
+    if (period === 'year') next.set('period', 'year');
     setSearchParams(next, { replace: true });
-  }, [year, month, categoryId, setSearchParams]);
+  }, [year, month, categoryId, accountId, period, setSearchParams]);
 
   function shift(delta: number) {
+    if (period === 'year') { setYear((value) => value + delta); return; }
     const d = new Date(Date.UTC(year, month + delta, 1));
     setYear(d.getUTCFullYear());
     setMonth(d.getUTCMonth());
@@ -117,44 +137,48 @@ export function TransactionsPage() {
 
   return (
     <div className="space-y-8 pb-10">
-      <section className="relative overflow-hidden rounded-3xl bg-neutral-950 px-5 py-6 text-white shadow-xl shadow-neutral-200/70 sm:px-8 sm:py-8"><div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-emerald-500/20 blur-3xl" /><div className="relative"><div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Activity overview</div><h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Every transaction, in context.</h1><p className="mt-2 max-w-2xl text-sm text-neutral-400 sm:text-base">Record money in and out, review monthly totals, and understand your spending by category.</p></div></section>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-600">This month</p><p className="mt-0.5 text-sm text-neutral-500">Review your balances and activity, or record something new.</p></div><button onClick={() => setAdding(true)} disabled={accounts.length === 0} className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">+ Add transaction</button></div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><h1 className="text-2xl font-semibold tracking-tight text-neutral-900 sm:text-3xl">Transactions</h1><p className="mt-0.5 text-sm text-neutral-500">Review your balances and activity, or record something new.</p></div><button onClick={() => setAdding(true)} disabled={accounts.length === 0} className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">+ Add transaction</button></div>
 
       {error && <p className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
 
       <section className="rounded-3xl border border-neutral-200/80 bg-white p-4 shadow-sm sm:p-6">
+      <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-neutral-100 p-1 sm:mx-auto sm:w-64" role="group" aria-label="Summary period">
+        <button type="button" onClick={() => setPeriod('month')} aria-pressed={period === 'month'} className={`min-h-10 rounded-lg px-5 text-sm font-semibold transition ${period === 'month' ? 'bg-white text-emerald-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Month</button>
+        <button type="button" onClick={() => setPeriod('year')} aria-pressed={period === 'year'} className={`min-h-10 rounded-lg px-5 text-sm font-semibold transition ${period === 'year' ? 'bg-white text-emerald-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Year</button>
+      </div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <button onClick={() => shift(-1)} className="rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-emerald-50">← Prev</button>
         </div>
-        <div className="text-center"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-600">Monthly overview</p><h2 className="mt-1 text-lg font-semibold tracking-tight sm:text-xl">{MONTHS[month]} {year}</h2></div>
-        {year === now.getUTCFullYear() && month === now.getUTCMonth() ? <span className="px-3 py-2 text-sm text-neutral-300">Next →</span> : <button onClick={() => shift(1)} className="rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-emerald-50">Next →</button>}
+        <div className="text-center"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-600">{period === 'year' ? 'Yearly overview' : 'Monthly overview'}</p><h2 className="mt-1 text-lg font-semibold tracking-tight sm:text-xl">{period === 'year' ? year : `${MONTHS[month]} ${year}`}</h2></div>
+        {(period === 'year' ? year >= now.getUTCFullYear() : year === now.getUTCFullYear() && month === now.getUTCMonth()) ? <span className="px-3 py-2 text-sm text-neutral-300">Next →</span> : <button onClick={() => shift(1)} className="rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-emerald-50">Next →</button>}
       </div>
 
       {data && (
-        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
-          <InlineStartingBalance year={year} month={month} data={data} currency={currency} onSaved={loadMonth} />
-          <SummaryCard label="Current Balance" value={formatMoney(data.currentBalance, currency)} tone="neutral" />
-          <SummaryCard label="Net this month" value={`${Number(data.net) >= 0 ? '+' : ''}${formatMoney(data.net, currency)}`} tone={Number(data.net) >= 0 ? 'emerald' : 'rose'} />
-          <SummaryCard label="Income" value={formatMoney(data.income, currency)} tone="emerald" />
-          <SummaryCard label="Expense" value={formatMoney(data.expense, currency)} tone="rose" />
+        <div className="mb-6 grid grid-cols-1 gap-0.5 rounded-2xl border border-neutral-200 bg-white p-2 shadow-sm sm:p-3">
+          {period === 'year'
+            ? <SummaryRow label="Starting balance" value={formatMoney(data.startingBalance, currency)} tone="neutral" />
+            : <InlineStartingBalance year={year} month={month} data={data} currency={currency} onSaved={loadMonth} />}
+          <SummaryRow label="Current balance" value={formatMoney(data.currentBalance, currency)} tone="neutral" />
+          <SummaryRow label="Income" value={formatMoney(data.income, currency)} tone="emerald" />
+          <SummaryRow label="Expense" value={formatMoney(data.expense, currency)} tone="rose" />
+          <SummaryRow label={period === 'year' ? 'Net this year' : 'Net this month'} value={`${Number(data.net) >= 0 ? '+' : ''}${formatMoney(data.net, currency)}`} tone={Number(data.net) >= 0 ? 'emerald' : 'rose'} />
         </div>
       )}
 
-      {budgets.some((budget) => budget.status !== 'SAFE') && <div className="mb-5 space-y-2">{budgets.filter((budget) => budget.status !== 'SAFE').map((budget) => <div key={budget.categoryId} role="status" className={`rounded-xl border px-3 py-2 text-xs ${budget.status === 'OVER' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}><strong>{categoryName.get(budget.categoryId) ?? 'Category'} is {budget.status === 'OVER' ? 'over budget' : 'almost at budget'}.</strong> {formatMoney(budget.spentAmount, currency)} of {formatMoney(budget.budgetAmount, currency)} used ({budget.usagePercent.toFixed(0)}%).</div>)}</div>}
-
       <div className="mb-5 flex flex-wrap items-end gap-3">
-        <label className="w-full min-w-0 flex-1 text-sm font-medium text-neutral-700 sm:min-w-64">Filter by category<select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className={inputClass}><option value="">All categories</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
-        {categoryId && <button onClick={() => setCategoryId('')} className="min-h-11 rounded-lg border border-neutral-200 px-3 py-2 text-sm text-neutral-600">Clear filter</button>}
+        <label className="w-full min-w-0 flex-1 text-sm font-medium text-neutral-700 sm:min-w-56">Filter by account<select value={accountId} onChange={(event) => setAccountId(event.target.value)} className={inputClass}><option value="">All accounts</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
+        <label className="w-full min-w-0 flex-1 text-sm font-medium text-neutral-700 sm:min-w-56">Filter by category<select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className={inputClass}><option value="">All categories</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+        {(categoryId || accountId) && <button onClick={() => { setCategoryId(''); setAccountId(''); }} className="min-h-11 rounded-lg border border-neutral-200 px-3 py-2 text-sm text-neutral-600">Clear filters</button>}
       </div>
 
       {categoryId && data && (
         <div className="mb-5 rounded-xl border border-neutral-200 bg-neutral-50/70 p-4">
           <div className="flex items-baseline justify-between gap-3">
-            <span className="text-sm font-medium text-neutral-700">{filteredCategory?.name ?? 'Category'} this month</span>
+            <span className="text-sm font-medium text-neutral-700">{filteredCategory?.name ?? 'Category'} this {period}</span>
             <span className={`text-base font-semibold tabular-nums ${filteredKind === 'INCOME' ? 'text-emerald-600' : 'text-rose-500'}`}>{filteredKind === 'INCOME' ? '+' : '-'}{formatMoney(filteredTotal, currency)}</span>
           </div>
-          {filteredBudget && (
+          {filteredBudget && period === 'month' && (
             <div className="mt-3">
               <div className="mb-1 flex items-center justify-between text-xs text-neutral-500">
                 <span>Budget</span>
@@ -172,7 +196,7 @@ export function TransactionsPage() {
         {loading ? (
           <p className="p-6 text-sm text-neutral-500">Loading…</p>
         ) : !data || data.items.length === 0 ? (
-          <p className="p-10 text-center text-sm text-neutral-500">No transactions this month.</p>
+          <p className="p-10 text-center text-sm text-neutral-500">No transactions this {period}.</p>
         ) : (
           <ul className="space-y-1">
             {data.items.map((t) => {
@@ -197,6 +221,11 @@ export function TransactionsPage() {
               );
             })}
           </ul>
+        )}
+        {data?.nextCursor && (
+          <div className="pt-4 text-center">
+            <button onClick={() => void loadMore()} disabled={loadingMore} className="min-h-11 rounded-xl border border-neutral-200 px-5 py-2.5 text-sm font-semibold text-neutral-700 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-50">{loadingMore ? 'Loading…' : 'Load more'}</button>
+          </div>
         )}
       </div>
       </section>
@@ -234,7 +263,28 @@ function InlineStartingBalance({ year, month, data, currency, onSaved }: { year:
     finally { setPending(false); }
   }
 
-  return <div className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-white p-4 text-center shadow-sm"><div className="absolute inset-x-0 top-0 h-0.5 bg-amber-400" /><p className="text-[11px] font-medium text-neutral-400">Starting Balance{data.isManualStart && <span className="text-amber-500"> · manual</span>}</p>{editing ? <form onSubmit={save} className="mt-1"><input name="startingBalance" inputMode="decimal" required autoFocus defaultValue={data.startingBalance} className="w-full border-b border-emerald-400 bg-transparent py-1 text-center text-sm font-semibold outline-none" /><div className="mt-1 flex justify-center gap-2 text-[11px]"><button disabled={pending} className="font-semibold text-emerald-600">Save</button>{data.isManualStart && <button type="button" onClick={() => void reset()} className="text-rose-500">Reset</button>}<button type="button" onClick={() => setEditing(false)} className="text-neutral-400">Cancel</button></div>{error && <p className="mt-1 text-[10px] text-rose-600">{error}</p>}</form> : <button type="button" onClick={() => setEditing(true)} className="mt-1 text-center text-sm font-semibold text-neutral-900">{formatMoney(data.startingBalance, currency)} <span className="text-amber-500">✎</span></button>}</div>;
+  return (
+    <div className="rounded-2xl px-3 py-2">
+      {editing ? (
+        <form onSubmit={save} className="space-y-2">
+          <span className="text-sm font-medium text-neutral-600">Starting balance{data.isManualStart && <span className="text-amber-500"> · manual</span>}</span>
+          <div className="flex items-center gap-2">
+            <span className="shrink-0 text-xs font-medium text-neutral-400">{currency}</span>
+            <input name="startingBalance" inputMode="decimal" required autoFocus defaultValue={data.startingBalance} className="min-h-11 min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm tabular-nums outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" />
+            <button disabled={pending} className="min-h-11 shrink-0 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-50">Save</button>
+            {data.isManualStart && <button type="button" onClick={() => void reset()} className="min-h-11 shrink-0 rounded-lg px-2 text-xs font-medium text-rose-600">Reset</button>}
+            <button type="button" onClick={() => setEditing(false)} className="min-h-11 shrink-0 rounded-lg px-2 text-xs font-medium text-neutral-500">Cancel</button>
+          </div>
+          {error && <p className="text-xs text-rose-600">{error}</p>}
+        </form>
+      ) : (
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-medium text-neutral-600">Starting balance{data.isManualStart && <span className="text-amber-500"> · manual</span>}</span>
+          <button type="button" onClick={() => setEditing(true)} className="shrink-0 text-sm font-semibold tabular-nums text-neutral-900">{formatMoney(data.startingBalance, currency)} <span className="text-amber-500">✎</span></button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function TransactionEditor({ transaction, accountName, categories, onClose, onSaved }: { transaction: TransactionDTO; accountName: string; categories: CategoryDTO[]; onClose: () => void; onSaved: () => void }) {
@@ -291,14 +341,12 @@ function TransactionEditor({ transaction, accountName, categories, onClose, onSa
   </Modal>;
 }
 
-function SummaryCard({ label, value, tone }: { label: string; value: string; tone: 'emerald' | 'rose' | 'neutral' }) {
+function SummaryRow({ label, value, tone }: { label: string; value: string; tone: 'emerald' | 'rose' | 'neutral' }) {
   const color = tone === 'emerald' ? 'text-emerald-600' : tone === 'rose' ? 'text-rose-600' : 'text-neutral-900';
-  const accent = tone === 'emerald' ? 'bg-emerald-400' : tone === 'rose' ? 'bg-rose-400' : 'bg-neutral-700';
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-white p-4 text-center shadow-sm">
-      <div className={`absolute inset-x-0 top-0 h-0.5 ${accent}`} />
-      <p className="text-[11px] font-medium text-neutral-400">{label}</p>
-      <p className={`mt-1 truncate text-sm font-semibold tabular-nums ${color}`} title={value}>{value}</p>
+    <div className="flex items-center justify-between gap-3 rounded-2xl px-3 py-2">
+      <span className="text-sm font-medium text-neutral-600">{label}</span>
+      <span className={`shrink-0 text-sm font-semibold tabular-nums ${color}`} title={value}>{value}</span>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type ComponentPropsWithoutRef, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { api } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api';
 import type { AccountSummaryDTO } from '@/lib/types';
@@ -19,6 +19,13 @@ export function AccountsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
+  // Reordering uses Pointer Events (not the HTML5 drag API, which never fires on
+  // touch screens) so it works with both a mouse and a finger.
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const rowRefs = useRef<Record<string, HTMLLIElement | null>>({});
+  const draggingIdRef = useRef<string | null>(null);
+  const orderRef = useRef<string[]>([]);
+  const movedRef = useRef(false);
 
   async function load() {
     setError(null);
@@ -35,22 +42,69 @@ export function AccountsPage() {
     void load();
   }, []);
 
-  const activeCount = accounts.filter((account) => !account.isArchived).length;
-  const archivedCount = accounts.length - activeCount;
+  function moveTo(clientY: number) {
+    const draggingAccountId = draggingIdRef.current;
+    if (!draggingAccountId) return;
+    const order = orderRef.current;
+    const fromIndex = order.indexOf(draggingAccountId);
+    if (fromIndex === -1) return;
+    // Insert before the first row whose vertical midpoint is below the pointer;
+    // if the pointer is past every midpoint, drop at the end. Midpoint hit-testing
+    // (rather than top/bottom bounds) removes dead zones and lets the dragged row
+    // reach the very top or bottom.
+    let targetIndex = order.length - 1;
+    for (let i = 0; i < order.length; i++) {
+      const el = rowRefs.current[order[i] as string];
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2) { targetIndex = i; break; }
+    }
+    if (targetIndex === fromIndex) return;
+    const next = [...order];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(targetIndex, 0, moved as string);
+    orderRef.current = next;
+    movedRef.current = true;
+    setAccounts((prev) => {
+      const byId = new Map(prev.map((account) => [account.id, account]));
+      return next.map((id) => byId.get(id)).filter((account): account is AccountSummaryDTO => Boolean(account));
+    });
+  }
+
+  async function endDrag() {
+    if (!draggingIdRef.current) return;
+    draggingIdRef.current = null;
+    setDraggingId(null);
+    if (!movedRef.current) return;
+    movedRef.current = false;
+    try { await api.accounts.reorder(orderRef.current); }
+    catch (err) { setError(err instanceof ApiError ? err.message : 'Failed to reorder accounts.'); void load(); }
+  }
+
+  function gripProps(id: string): ComponentPropsWithoutRef<'button'> {
+    return {
+      onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => {
+        if (event.button !== 0 && event.pointerType === 'mouse') return;
+        event.preventDefault();
+        draggingIdRef.current = id;
+        movedRef.current = false;
+        orderRef.current = accounts.map((account) => account.id);
+        setDraggingId(id);
+        event.currentTarget.setPointerCapture(event.pointerId);
+      },
+      onPointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => {
+        if (draggingIdRef.current === id) moveTo(event.clientY);
+      },
+      onPointerUp: (event: ReactPointerEvent<HTMLButtonElement>) => {
+        try { event.currentTarget.releasePointerCapture(event.pointerId); } catch { /* already released */ }
+        void endDrag();
+      },
+      onPointerCancel: () => void endDrag(),
+    };
+  }
 
   return (
     <div className="space-y-8 pb-10">
-      <section className="relative overflow-hidden rounded-3xl bg-neutral-950 px-5 py-6 text-white shadow-xl shadow-neutral-200/70 sm:px-8 sm:py-8">
-        <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-emerald-500/20 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-24 left-1/3 h-48 w-48 rounded-full bg-teal-400/10 blur-3xl" />
-        <div className="relative">
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Account overview</div>
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Your accounts, organised.</h1>
-          <p className="mt-2 max-w-2xl text-sm text-neutral-400 sm:text-base">Manage where your money lives and set the balance each account started with.</p>
-          <div className="mt-6 flex flex-wrap gap-3 text-sm"><span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-neutral-300"><strong className="text-white">{activeCount}</strong> active</span>{archivedCount > 0 && <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-neutral-300"><strong className="text-white">{archivedCount}</strong> archived</span>}</div>
-        </div>
-      </section>
-
       {error && <p className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
       <section>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-600">Your money</p><h2 className="text-xl font-semibold tracking-tight text-neutral-900">Your accounts</h2><p className="mt-1 text-sm text-neutral-500">Edit starting balances, categories, names, or account status.</p></div><button onClick={() => setDialog({ kind: 'create' })} className="min-h-11 touch-manipulation rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700">+ Add account</button></div>
@@ -59,16 +113,20 @@ export function AccountsPage() {
       ) : accounts.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-neutral-300 bg-white px-6 py-12 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-xl text-emerald-600">$</div><p className="mt-4 font-medium text-neutral-800">No accounts yet</p><p className="mt-1 text-sm text-neutral-500">Use the “Add account” button above to create your first one.</p></div>
       ) : (
-        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <>
+        {accounts.length > 1 && <p className="mb-3 text-xs text-neutral-400">Drag the ⋮⋮ handle to reorder your accounts.</p>}
+        <ul className="space-y-3">
           {accounts.map((a) => (
-            <li key={a.id} className="group relative overflow-hidden rounded-3xl border border-neutral-200/80 bg-white p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:border-emerald-200 hover:shadow-lg">
-              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-400 to-teal-500 opacity-80" />
-              <div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-sm font-bold text-emerald-700">{accountInitials(a.name)}</span><div className="min-w-0"><p className="truncate font-semibold text-neutral-800">{a.name}</p><p className="mt-0.5 text-xs text-neutral-400">{accountTypeLabel(a.type)}</p></div></div><span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${a.isArchived ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>{a.isArchived ? 'Archived' : 'Active'}</span></div>
-              <div className="mt-6 rounded-2xl bg-neutral-50 p-4"><div className="flex items-start justify-between gap-3"><AccountMetric label="Starting balance" value={formatMoney(a.balance, a.currency)} /><span className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs font-medium text-neutral-500">{a.currency}</span></div><div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-neutral-200/70 pt-4"><AccountMetric label="Current balance" value={formatMoney(a.currentBalance, a.currency)} /><AccountMetric label="Net this month" value={formatMoney(a.netThisMonth, a.currency)} tone={Number(a.netThisMonth) >= 0 ? 'positive' : 'negative'} /><AccountMetric label="Income this month" value={formatMoney(a.incomeThisMonth, a.currency)} tone="positive" /><AccountMetric label="Expenses this month" value={formatMoney(a.expenseThisMonth, a.currency)} tone="negative" /></div></div>
-              <div className="mt-4 flex justify-end border-t border-neutral-100 pt-4"><button onClick={() => setDialog({ kind: 'edit', account: a })} className="min-h-11 touch-manipulation rounded-lg px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-100">✎ Edit account</button></div>
+            <li
+              key={a.id}
+              ref={(el) => { rowRefs.current[a.id] = el; }}
+              className={draggingId === a.id ? 'relative z-10 opacity-70' : ''}
+            >
+              <AccountCard account={a} onEdit={() => setDialog({ kind: 'edit', account: a })} gripProps={gripProps(a.id)} dragging={draggingId === a.id} />
             </li>
           ))}
         </ul>
+        </>
       )}
       </section>
 
@@ -190,6 +248,43 @@ function AccountForm({ title, account, defaultCurrency = 'AUD', isFirstAccount =
     </Modal>
   );
 }
+
+function AccountCard({ account: a, onEdit, gripProps, dragging }: { account: AccountSummaryDTO; onEdit: () => void; gripProps: ComponentPropsWithoutRef<'button'>; dragging: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className={`overflow-hidden rounded-2xl border bg-white shadow-sm transition ${dragging ? 'border-emerald-300 shadow-lg' : 'border-neutral-200/80 hover:border-emerald-200 hover:shadow-md'}`}>
+      <div className="flex items-center">
+        <button type="button" {...gripProps} className="flex shrink-0 cursor-grab touch-none select-none items-center self-stretch rounded-l-2xl pl-2.5 pr-1 text-neutral-300 hover:text-neutral-500 active:cursor-grabbing" title="Drag to reorder" aria-label={`Drag ${a.name} to reorder`}><GripIcon /></button>
+        <button type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} className="flex min-w-0 flex-1 items-center gap-2.5 py-3.5 pl-1 pr-3 text-left">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-xs font-bold text-emerald-700">{accountInitials(a.name)}</span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-semibold text-neutral-800">{a.name}</span>
+            <span className="mt-0.5 block truncate text-xs text-neutral-400">{accountTypeLabel(a.type)}{a.isArchived ? ' · Archived' : ''}</span>
+          </span>
+          <span className="shrink-0 whitespace-nowrap text-right">
+            <span className="block text-sm font-semibold tabular-nums text-neutral-900">{formatMoney(a.currentBalance, a.currency)}</span>
+            <span className="block text-[10px] uppercase tracking-wide text-neutral-400">Current</span>
+          </span>
+          <svg viewBox="0 0 24 24" className={`h-5 w-5 shrink-0 text-neutral-300 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+        </button>
+      </div>
+      {expanded && (
+        <div className="border-t border-neutral-100 p-4">
+          <div className="rounded-2xl bg-neutral-50 p-4">
+            <div className="flex items-start justify-between gap-3"><AccountMetric label="Starting balance" value={formatMoney(a.balance, a.currency)} /><span className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs font-medium text-neutral-500">{a.currency}</span></div>
+            <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-neutral-200/70 pt-4"><AccountMetric label="Current balance" value={formatMoney(a.currentBalance, a.currency)} /><AccountMetric label="Net this month" value={formatMoney(a.netThisMonth, a.currency)} tone={Number(a.netThisMonth) >= 0 ? 'positive' : 'negative'} /><AccountMetric label="Income this month" value={formatMoney(a.incomeThisMonth, a.currency)} tone="positive" /><AccountMetric label="Expenses this month" value={formatMoney(a.expenseThisMonth, a.currency)} tone="negative" /></div>
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${a.isArchived ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>{a.isArchived ? 'Archived' : 'Active'}</span>
+            <button onClick={onEdit} className="min-h-11 touch-manipulation rounded-lg px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-100">✎ Edit account</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GripIcon() { return <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true"><circle cx="9" cy="6" r="1.4" fill="currentColor" /><circle cx="15" cy="6" r="1.4" fill="currentColor" /><circle cx="9" cy="12" r="1.4" fill="currentColor" /><circle cx="15" cy="12" r="1.4" fill="currentColor" /><circle cx="9" cy="18" r="1.4" fill="currentColor" /><circle cx="15" cy="18" r="1.4" fill="currentColor" /></svg>; }
 
 function AccountMetric({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'positive' | 'negative' }) {
   const color = tone === 'positive' ? 'text-emerald-600' : tone === 'negative' ? 'text-rose-500' : 'text-neutral-900';

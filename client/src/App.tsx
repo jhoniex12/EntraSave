@@ -7,6 +7,10 @@ import { SignUpPage } from '@/pages/sign-up';
 import { DashboardPage } from '@/pages/dashboard';
 import { AccountsPage } from '@/pages/accounts';
 import { SettingsPage } from '@/pages/settings';
+import { SettingsCurrencyPage } from '@/pages/settings-currency';
+import { SettingsAppearancePage } from '@/pages/settings-appearance';
+import { SettingsCategoriesPage } from '@/pages/settings-categories';
+import { SettingsBudgetPage } from '@/pages/settings-budget';
 import { ManageAccountPage } from '@/pages/manage-account';
 import { TransactionsPage } from '@/pages/transactions';
 import { PrivacyPage } from '@/pages/privacy';
@@ -47,6 +51,10 @@ export function App() {
         <Route path="/accounts" element={<AccountsPage />} />
         <Route path="/transactions" element={<TransactionsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings/currency" element={<SettingsCurrencyPage />} />
+        <Route path="/settings/appearance" element={<SettingsAppearancePage />} />
+        <Route path="/settings/categories" element={<SettingsCategoriesPage />} />
+        <Route path="/settings/budget" element={<SettingsBudgetPage />} />
         <Route path="/manage-account" element={<ManageAccountPage />} />
       </Route>
 

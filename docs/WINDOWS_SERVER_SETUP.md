@@ -209,11 +209,11 @@ Now install it as an always‑on service:
 
 ```powershell
 nssm install EntraSaveAPI "C:\Program Files\nodejs\npm.cmd" "run start"
-nssm set EntraSaveAPI AppDirectory "D:\apps\EntraSave\server"
-nssm set EntraSaveAPI AppStdout "D:\apps\EntraSave\logs\api.out.log"
-nssm set EntraSaveAPI AppStderr "D:\apps\EntraSave\logs\api.err.log"
+nssm set EntraSaveAPI AppDirectory "C:\entrasaveweb\server"
+nssm set EntraSaveAPI AppStdout "C:\entrasaveweb\logs\api.out.log"
+nssm set EntraSaveAPI AppStderr "C:\entrasaveweb\logs\api.err.log"
 nssm set EntraSaveAPI Start SERVICE_AUTO_START
-New-Item -ItemType Directory -Force D:\apps\EntraSave\logs | Out-Null
+New-Item -ItemType Directory -Force C:\entrasaveweb\logs | Out-Null
 nssm start EntraSaveAPI
 ```
 

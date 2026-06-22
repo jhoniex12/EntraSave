@@ -183,6 +183,7 @@ class PrismaTransactionRepository implements TransactionRepository {
     from: Date,
     to: Date,
     categoryId?: string,
+    accountId?: string,
   ): Promise<MonthCategorySummary[]> {
     const rows = await prisma.transaction.groupBy({
       by: ['categoryId', 'type'],
@@ -192,6 +193,7 @@ class PrismaTransactionRepository implements TransactionRepository {
         deletedAt: null,
         type: { in: ['INCOME', 'EXPENSE'] },
         ...(categoryId ? { categoryId } : {}),
+        ...(accountId ? { accountId } : {}),
         occurredAt: { gte: from, lt: to },
       },
     });

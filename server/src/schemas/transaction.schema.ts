@@ -82,5 +82,10 @@ export const GetMonthSchema = z.object({
   year: z.number().int().min(2000).max(2100),
   month: z.number().int().min(0).max(11),
   categoryId: z.string().cuid().optional(),
+  accountId: z.string().cuid().optional(),
+  // 'month' reads a single calendar month; 'year' aggregates the whole year.
+  period: z.enum(['month', 'year']).default('month'),
+  /** Opaque keyset cursor from the previous page (for the transaction list). */
+  cursor: z.string().optional(),
 });
 export type GetMonthInput = z.infer<typeof GetMonthSchema>;

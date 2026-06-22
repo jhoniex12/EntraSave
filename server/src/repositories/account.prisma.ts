@@ -29,6 +29,7 @@ class PrismaAccountRepository implements AccountRepository {
           type: data.type,
           currency: data.currency,
           balance: data.openingBalance, // Prisma coerces the string into Decimal(19,4)
+          position: data.position,
           idempotencyKey: data.idempotencyKey,
         },
       });
@@ -53,6 +54,10 @@ class PrismaAccountRepository implements AccountRepository {
     return existing !== null;
   }
 
+  async countForUser(userId: string): Promise<number> {
+    return prisma.account.count({ where: { userId, deletedAt: null } });
+  }
+
   async findByIdForUser(userId: string, id: string): Promise<Account | null> {
     return prisma.account.findFirst({
       where: { id, userId, deletedAt: null },
@@ -66,7 +71,9 @@ class PrismaAccountRepository implements AccountRepository {
         deletedAt: null,
         ...(includeArchived ? {} : { isArchived: false }),
       },
-      orderBy: { createdAt: 'desc' },
+      // Default order is oldest-first; user-defined `position` takes precedence
+      // once accounts have been reordered.
+      orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
     });
   }
 
@@ -82,7 +89,7 @@ class PrismaAccountRepository implements AccountRepository {
       ...(includeArchived ? {} : { isArchived: false }),
     };
     const [accounts, throughMonth, inMonth] = await Promise.all([
-      prisma.account.findMany({ where: accountWhere, orderBy: { createdAt: 'desc' } }),
+      prisma.account.findMany({ where: accountWhere, orderBy: [{ position: 'asc' }, { createdAt: 'asc' }] }),
       prisma.transaction.groupBy({
         by: ['accountId', 'type'],
         _sum: { amount: true },
@@ -148,6 +155,18 @@ class PrismaAccountRepository implements AccountRepository {
     }
     // Safe to read back: ownership already proven above.
     return prisma.account.findFirstOrThrow({ where: { id, userId } });
+  }
+
+  async setPositions(userId: string, orderedIds: string[]): Promise<void> {
+    // Ownership enforced in each WHERE; non-owned ids are simply no-ops.
+    await prisma.$transaction(
+      orderedIds.map((id, index) =>
+        prisma.account.updateMany({
+          where: { id, userId, deletedAt: null },
+          data: { position: index },
+        }),
+      ),
+    );
   }
 
   async softDeleteWithTransactions(

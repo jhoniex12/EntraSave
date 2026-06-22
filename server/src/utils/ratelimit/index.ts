@@ -24,6 +24,7 @@ export const RATE_LIMITS = {
   'account.update': { limit: 30, windowMs: 60_000 },
   'account.delete': { limit: 10, windowMs: 60_000 },
   'account.list': { limit: 120, windowMs: 60_000 },
+  'account.reorder': { limit: 60, windowMs: 60_000 },
   'settings.update': { limit: 10, windowMs: 3_600_000 },
   'category.create': { limit: 30, windowMs: 60_000 },
   'category.update': { limit: 60, windowMs: 60_000 },

@@ -47,6 +47,8 @@ export const api = {
       openingBalance?: string;
       isArchived?: boolean;
     }) => post<AccountDTO>('/accounts/update', input),
+    reorder: (orderedIds: string[]) =>
+      post<{ count: number }>('/accounts/reorder', { orderedIds }),
     remove: (input: { id: string; confirmation: string }) =>
       post<{ id: string; deletedTransactions: number }>('/accounts/delete', input),
   },
@@ -54,7 +56,7 @@ export const api = {
   transactions: {
     list: (input: { accountId?: string; categoryId?: string; pageSize?: number; cursor?: string } = {}) =>
       post<Page<TransactionDTO>>('/transactions/list', input),
-    month: (input: { year: number; month: number; categoryId?: string }) =>
+    month: (input: { year: number; month: number; categoryId?: string; accountId?: string; period?: 'month' | 'year'; cursor?: string }) =>
       post<MonthResponse>('/transactions/month', input),
     create: (input: {
       accountId: string;

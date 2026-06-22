@@ -101,6 +101,7 @@ model Account {
   currency   String    @default("AUD")
   balance    Decimal   @default(0) @db.Decimal(19, 4)
   isArchived Boolean   @default(false)
+  position   Int       @default(0) // user-defined display order (oldest first by default)
   // Optional client-supplied idempotency key for safe create retries. A filtered
   // unique index on [userId, idempotencyKey] (created in the idempotency_keys
   // migration — SQL Server partial indexes can't be expressed here) dedupes
@@ -115,6 +116,7 @@ model Account {
 
   @@index([userId])
   @@index([userId, deletedAt])
+  @@index([userId, position])
 }
 
 model Category {

@@ -99,6 +99,7 @@ export interface Page<T> {
 
 export interface MonthResponse {
   items: TransactionDTO[];
+  nextCursor: string | null;
   income: string;
   expense: string;
   net: string;

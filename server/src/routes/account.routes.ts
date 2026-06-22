@@ -4,6 +4,7 @@ import {
   accountSummary,
   createAccount,
   updateAccount,
+  reorderAccounts,
   deleteAccount,
 } from '@/controllers/account.controller';
 
@@ -14,4 +15,5 @@ accountRoutes.post('/list', listAccounts);
 accountRoutes.post('/summary', accountSummary);
 accountRoutes.post('/create', createAccount);
 accountRoutes.post('/update', updateAccount);
+accountRoutes.post('/reorder', reorderAccounts);
 accountRoutes.post('/delete', deleteAccount);

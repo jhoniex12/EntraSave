@@ -20,6 +20,9 @@ import type {
  * ONLY here. Cross-module access (verifying the target account is owned by the
  * caller) goes through the Accounts PUBLIC service, never its internals.
  */
+/** Page size for the month/year transaction list (keyset-paginated). */
+const MONTH_PAGE_SIZE = 100;
+
 export class TransactionService {
   constructor(private readonly repo: TransactionRepository) {}
 
@@ -112,8 +115,12 @@ export class TransactionService {
     year: number,
     month: number,
     categoryId?: string,
+    accountId?: string,
+    period: 'month' | 'year' = 'month',
+    cursor?: string,
   ): Promise<{
     items: TransactionDTO[];
+    nextCursor: string | null;
     income: string;
     expense: string;
     net: string;
@@ -129,14 +136,32 @@ export class TransactionService {
     if (categoryId) {
       await categoryService.assertOwned(ctx, categoryId);
     }
-    const from = new Date(Date.UTC(year, month, 1));
-    const to = new Date(Date.UTC(year, month + 1, 1));
-    const [rows, summary, categorySummary] = await Promise.all([
-      this.repo.list({ userId: ctx.userId, from, to, categoryId, pageSize: 1000 }),
-      this.getMonthSummary(ctx, year, month),
-      this.repo.monthCategorySummary(ctx.userId, from, to, categoryId),
+    // The account filter narrows the transaction list (and per-category totals);
+    // verifying ownership also blocks scoping by an account the caller doesn't own.
+    if (accountId) {
+      await accountService.assertOwned(ctx, accountId);
+    }
+    const isYear = period === 'year';
+    const from = new Date(Date.UTC(year, isYear ? 0 : month, 1));
+    const to = new Date(Date.UTC(isYear ? year + 1 : year, isYear ? 0 : month + 1, 1));
+    // The user-set starting-balance override is a per-month concept; a year view
+    // always uses the computed running balance.
+    const [openingTotal, override] = await Promise.all([
+      accountService.totalBalance(ctx),
+      isYear ? Promise.resolve(null) : balanceService.getStartingBalance(ctx, year, month),
     ]);
-    return { items: rows.map(toTransactionDTO), ...summary, categorySummary };
+    // Keyset pagination: fetch one extra row to know whether another page exists.
+    const seek = decodeCursor(cursor);
+    const [rows, summary, categorySummary] = await Promise.all([
+      this.repo.list({ userId: ctx.userId, from, to, categoryId, accountId, cursor: seek, pageSize: MONTH_PAGE_SIZE + 1 }),
+      this.repo.monthSummary(ctx.userId, from, to, openingTotal, override),
+      this.repo.monthCategorySummary(ctx.userId, from, to, categoryId, accountId),
+    ]);
+    const hasMore = rows.length > MONTH_PAGE_SIZE;
+    const items = hasMore ? rows.slice(0, MONTH_PAGE_SIZE) : rows;
+    const last = items.at(-1);
+    const nextCursor = hasMore && last ? encodeCursor(last.occurredAt, last.id) : null;
+    return { items: items.map(toTransactionDTO), nextCursor, ...summary, categorySummary };
   }
 
   /** Current totals for a calendar month without loading its transaction rows. */

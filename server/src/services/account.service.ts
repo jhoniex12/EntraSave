@@ -12,6 +12,7 @@ import type {
   UpdateAccountInput,
   DeleteAccountInput,
   ListAccountsInput,
+  ReorderAccountsInput,
 } from '@/schemas/account.schema';
 
 /**
@@ -29,15 +30,22 @@ export class AccountService {
     // forced to the base currency so a direct API call can't introduce a second
     // one. The client mirrors this rule, but the server is authoritative.
     const currency = (await this.repo.hasAccounts(ctx.userId)) ? ctx.baseCurrency : input.currency;
+    const position = await this.repo.countForUser(ctx.userId); // append to the end (newest at the bottom)
     const account = await this.repo.create({
       userId: ctx.userId,
       name: input.name,
       type: input.type,
       currency,
       openingBalance: input.openingBalance,
+      position,
       idempotencyKey: input.idempotencyKey,
     });
     return toAccountDTO(account);
+  }
+
+  async reorder(ctx: AuthContext, input: ReorderAccountsInput): Promise<{ count: number }> {
+    await this.repo.setPositions(ctx.userId, input.orderedIds);
+    return { count: input.orderedIds.length };
   }
 
   async list(ctx: AuthContext, input: ListAccountsInput): Promise<AccountDTO[]> {

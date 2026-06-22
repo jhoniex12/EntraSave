@@ -5,6 +5,7 @@ import {
   UpdateAccountSchema,
   DeleteAccountSchema,
   ListAccountsSchema,
+  ReorderAccountsSchema,
 } from '@/schemas/account.schema';
 
 /**
@@ -59,6 +60,15 @@ export const updateAccount = defineRoute({
     resourceType: 'account',
     resourceId: input.id,
   }),
+});
+
+export const reorderAccounts = defineRoute({
+  name: 'account.reorder',
+  permission: 'accounts.write',
+  rateLimit: 'account.reorder',
+  schema: ReorderAccountsSchema,
+  handler: ({ ctx, input }) => accountService.reorder(ctx, input),
+  audit: false, // high-frequency during drag/reorder
 });
 
 export const deleteAccount = defineRoute({

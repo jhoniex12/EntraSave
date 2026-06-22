@@ -14,6 +14,8 @@ export interface CreateAccountData {
   type: Account['type'];
   currency: string;
   openingBalance: string;
+  /** Display order; new accounts append to the end so the newest sits at the bottom. */
+  position: number;
   /** When set, a repeat create with the same (userId, key) returns the original row. */
   idempotencyKey?: string;
 }
@@ -37,6 +39,8 @@ export interface AccountRepository {
   create(data: CreateAccountData): Promise<Account>;
   /** True when the user already has at least one (non-deleted) account. */
   hasAccounts(userId: string): Promise<boolean>;
+  /** Count of the user's (non-deleted) accounts — used to append new ones to the end. */
+  countForUser(userId: string): Promise<number>;
   findByIdForUser(userId: string, id: string): Promise<Account | null>;
   listForUser(userId: string, includeArchived: boolean): Promise<Account[]>;
   listSummariesForUser(
@@ -46,6 +50,8 @@ export interface AccountRepository {
     monthEnd: Date,
   ): Promise<AccountFinancialSummaryRecord[]>;
   update(userId: string, id: string, data: UpdateAccountData): Promise<Account>;
+  /** Persist a new display order. Position = index in `orderedIds`. */
+  setPositions(userId: string, orderedIds: string[]): Promise<void>;
   softDeleteWithTransactions(
     userId: string,
     id: string,

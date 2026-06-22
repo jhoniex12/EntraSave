@@ -57,3 +57,8 @@ export const ListAccountsSchema = z.object({
   includeArchived: z.boolean().default(false),
 });
 export type ListAccountsInput = z.infer<typeof ListAccountsSchema>;
+
+export const ReorderAccountsSchema = z.object({
+  orderedIds: z.array(z.string().cuid()).min(1).max(200),
+});
+export type ReorderAccountsInput = z.infer<typeof ReorderAccountsSchema>;
