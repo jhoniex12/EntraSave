@@ -62,6 +62,17 @@ const budgetRows: Array<{ name: string; spent: string; budget: string; pct: numb
   { name: 'House Bills', spent: 'A$181.00', budget: 'A$260.00', pct: 70, status: 'SAFE' },
 ];
 
+// Totals across the preview budgets, mirroring the dashboard's "Total spending"
+// row. Derived from the rows above so the total can't drift out of sync.
+const parseMoney = (value: string) => Number(value.replace(/[^0-9.]/g, ''));
+const formatAud = (value: number) => `A$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const budgetTotal = (() => {
+  const spent = budgetRows.reduce((sum, b) => sum + parseMoney(b.spent), 0);
+  const budget = budgetRows.reduce((sum, b) => sum + parseMoney(b.budget), 0);
+  const pct = budget > 0 ? (spent / budget) * 100 : 0;
+  return { spent, budget, pct };
+})();
+
 function FeatureIcon({ children }: { children: ReactNode }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" aria-hidden="true">
@@ -266,6 +277,18 @@ export function LandingPage() {
               </div>
               <div className="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
                 <strong>Groceries is over budget.</strong> A$445.56 of A$400.00 used (111%).
+              </div>
+              <div className="mb-5 border-b border-neutral-100 pb-5">
+                <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
+                  <span className="font-semibold text-neutral-800">Total spending</span>
+                  <span className="shrink-0 font-semibold tabular-nums text-neutral-800">{formatAud(budgetTotal.spent)} <span className="font-medium text-neutral-400">/ {formatAud(budgetTotal.budget)}</span></span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-neutral-100">
+                    <div className={`h-full rounded-full ${budgetTotal.pct >= 100 ? 'bg-rose-500' : budgetTotal.pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(budgetTotal.pct, 100)}%` }} />
+                  </div>
+                  <span className="shrink-0 text-[11px] font-semibold tabular-nums text-neutral-500">{budgetTotal.pct.toFixed(0)}%</span>
+                </div>
               </div>
               <div className="space-y-4">
                 {budgetRows.map((b) => {
