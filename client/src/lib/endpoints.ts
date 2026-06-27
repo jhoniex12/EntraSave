@@ -117,7 +117,7 @@ export const api = {
   },
 
   dashboard: {
-    summary: () => post<DashboardSummaryDTO>('/dashboard/summary', {}),
+    summary: (input: { accountId?: string } = {}) => post<DashboardSummaryDTO>('/dashboard/summary', input),
   },
 
   users: {

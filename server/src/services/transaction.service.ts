@@ -136,25 +136,26 @@ export class TransactionService {
     if (categoryId) {
       await categoryService.assertOwned(ctx, categoryId);
     }
-    // The account filter narrows the transaction list (and per-category totals);
-    // verifying ownership also blocks scoping by an account the caller doesn't own.
-    if (accountId) {
-      await accountService.assertOwned(ctx, accountId);
-    }
+    // The account filter narrows the transaction list, per-category totals AND the
+    // summary to one account. Fetching it both proves ownership (blocking scoping
+    // by an account the caller doesn't own) and gives us its opening balance — the
+    // baseline for that account's running balance.
+    const account = accountId ? await accountService.getOwned(ctx, accountId) : null;
     const isYear = period === 'year';
     const from = new Date(Date.UTC(year, isYear ? 0 : month, 1));
     const to = new Date(Date.UTC(isYear ? year + 1 : year, isYear ? 0 : month + 1, 1));
-    // The user-set starting-balance override is a per-month concept; a year view
-    // always uses the computed running balance.
+    // Per-account summaries use the account's own opening balance and ignore the
+    // user-set starting-balance override (an all-accounts, per-month concept). A
+    // year view always uses the computed running balance.
     const [openingTotal, override] = await Promise.all([
-      accountService.totalBalance(ctx),
-      isYear ? Promise.resolve(null) : balanceService.getStartingBalance(ctx, year, month),
+      account ? Promise.resolve(account.balance) : accountService.totalBalance(ctx),
+      isYear || account ? Promise.resolve(null) : balanceService.getStartingBalance(ctx, year, month),
     ]);
     // Keyset pagination: fetch one extra row to know whether another page exists.
     const seek = decodeCursor(cursor);
     const [rows, summary, categorySummary] = await Promise.all([
       this.repo.list({ userId: ctx.userId, from, to, categoryId, accountId, cursor: seek, pageSize: MONTH_PAGE_SIZE + 1 }),
-      this.repo.monthSummary(ctx.userId, from, to, openingTotal, override),
+      this.repo.monthSummary(ctx.userId, from, to, openingTotal, override, accountId),
       this.repo.monthCategorySummary(ctx.userId, from, to, categoryId, accountId),
     ]);
     const hasMore = rows.length > MONTH_PAGE_SIZE;
@@ -164,11 +165,16 @@ export class TransactionService {
     return { items: items.map(toTransactionDTO), nextCursor, ...summary, categorySummary };
   }
 
-  /** Current totals for a calendar month without loading its transaction rows. */
+  /**
+   * Current totals for a calendar month without loading its transaction rows.
+   * When `accountId` is set the totals/balances are scoped to that account
+   * (baseline = its own opening balance; transfers count toward its balance).
+   */
   async getMonthSummary(
     ctx: AuthContext,
     year: number,
     month: number,
+    accountId?: string,
   ): Promise<{
     income: string;
     expense: string;
@@ -177,14 +183,17 @@ export class TransactionService {
     currentBalance: string;
     isManualStart: boolean;
   }> {
+    // Fetching the account proves ownership and gives its opening balance.
+    const account = accountId ? await accountService.getOwned(ctx, accountId) : null;
     const from = new Date(Date.UTC(year, month, 1));
     const to = new Date(Date.UTC(year, month + 1, 1));
-    // Baseline = sum of account opening balances; override = user-set start (if any).
+    // Baseline = account opening balance (scoped) or sum of all openings; the
+    // per-month override is an all-accounts concept and is skipped when scoped.
     const [openingTotal, override] = await Promise.all([
-      accountService.totalBalance(ctx),
-      balanceService.getStartingBalance(ctx, year, month),
+      account ? Promise.resolve(account.balance) : accountService.totalBalance(ctx),
+      account ? Promise.resolve(null) : balanceService.getStartingBalance(ctx, year, month),
     ]);
-    return this.repo.monthSummary(ctx.userId, from, to, openingTotal, override);
+    return this.repo.monthSummary(ctx.userId, from, to, openingTotal, override, accountId);
   }
 
   async assertOwned(ctx: AuthContext, id: string): Promise<void> {

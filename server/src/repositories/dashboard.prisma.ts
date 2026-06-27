@@ -17,7 +17,10 @@ class PrismaDashboardRepository implements DashboardRepository {
     userId: string,
     ranges: MonthRange[],
     yearToDate: { start: Date; end: Date },
+    accountId?: string,
   ): Promise<DashboardOverview> {
+    // When scoped to one account, every transaction aggregate is narrowed to it.
+    const accountScope = accountId ? { accountId } : {};
     const transactionSum = (type: 'INCOME' | 'EXPENSE', start: Date, end: Date) =>
       prisma.transaction.aggregate({
         _sum: { amount: true },
@@ -26,6 +29,7 @@ class PrismaDashboardRepository implements DashboardRepository {
           type,
           deletedAt: null,
           occurredAt: { gte: start, lt: end },
+          ...accountScope,
         },
       });
 
@@ -39,6 +43,7 @@ class PrismaDashboardRepository implements DashboardRepository {
           deletedAt: null,
           type: { in: ['INCOME', 'EXPENSE'] },
           occurredAt: { gte: start, lt: end },
+          ...accountScope,
         },
       });
 
@@ -53,10 +58,10 @@ class PrismaDashboardRepository implements DashboardRepository {
     ] = await Promise.all([
       prisma.account.aggregate({
         _sum: { balance: true },
-        where: { userId, deletedAt: null },
+        where: { userId, deletedAt: null, ...(accountId ? { id: accountId } : {}) },
       }),
       prisma.account.count({
-        where: { userId, deletedAt: null, isArchived: false },
+        where: { userId, deletedAt: null, isArchived: false, ...(accountId ? { id: accountId } : {}) },
       }),
       Promise.all(
         ranges.flatMap((r) => [

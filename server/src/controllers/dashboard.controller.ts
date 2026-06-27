@@ -10,7 +10,7 @@ export const dashboardSummary = defineRoute({
   name: 'dashboard.summary',
   permission: 'transactions.read',
   rateLimit: 'transaction.list',
-  schema: z.object({}).strict(),
-  handler: ({ ctx }) => dashboardService.getSummary(ctx),
+  schema: z.object({ accountId: z.string().cuid().optional() }).strict(),
+  handler: ({ ctx, input }) => dashboardService.getSummary(ctx, input.accountId),
   audit: false,
 });

@@ -45,9 +45,14 @@ export interface DashboardOverview {
 }
 
 export interface DashboardRepository {
+  /**
+   * When `accountId` is set, every aggregate (monthly, year-to-date, category
+   * breakdowns) is scoped to that single account.
+   */
   overview(
     userId: string,
     ranges: MonthRange[],
     yearToDate: { start: Date; end: Date },
+    accountId?: string,
   ): Promise<DashboardOverview>;
 }

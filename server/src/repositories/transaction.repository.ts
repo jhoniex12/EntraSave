@@ -87,9 +87,12 @@ export interface TransactionRepository {
   list(params: ListTransactionsParams): Promise<Transaction[]>;
   /**
    * Month income/expense/net plus running starting & current balances.
-   * `openingTotal` is the sum of account opening balances (the baseline used
-   * when there is no override). `startingOverride` (if non-null) is used as the
-   * starting balance directly, skipping the computed running balance.
+   * `openingTotal` is the baseline opening balance (sum of all accounts, or a
+   * single account's opening balance when `accountId` is set). `startingOverride`
+   * (if non-null) is used as the starting balance directly, skipping the computed
+   * running balance — only honoured for the all-accounts view. When `accountId`
+   * is set the totals and balances are scoped to that account, and transfer legs
+   * count toward its running balance (across all accounts they net to zero).
    */
   monthSummary(
     userId: string,
@@ -97,6 +100,7 @@ export interface TransactionRepository {
     to: Date,
     openingTotal: string,
     startingOverride: string | null,
+    accountId?: string,
   ): Promise<MonthSummary>;
   monthCategorySummary(
     userId: string,

@@ -16,35 +16,49 @@ export function DashboardPage() {
   const [recent, setRecent] = useState<TransactionDTO[]>([]);
   const [budgets, setBudgets] = useState<BudgetStatusDTO[]>([]);
   const [period, setPeriod] = useState<'month' | 'year'>('month');
+  const [accountId, setAccountId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Accounts, categories and budgets don't depend on the account filter, so they
+  // load once on mount.
   useEffect(() => {
     const now = new Date();
     Promise.all([
-      api.dashboard.summary(),
       api.accounts.list(false),
       api.categories.list(),
-      api.transactions.list({ pageSize: 6 }),
       api.budgets.status({ year: now.getUTCFullYear(), month: now.getUTCMonth() }),
     ])
-      .then(([nextSummary, nextAccounts, nextCategories, nextRecent, nextBudgets]) => {
-        setSummary(nextSummary);
+      .then(([nextAccounts, nextCategories, nextBudgets]) => {
         setAccounts(nextAccounts);
         setCategories(nextCategories);
-        setRecent(nextRecent.items);
         setBudgets(nextBudgets);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  // Summary + recent activity are scoped to the selected account, so they reload
+  // whenever the filter changes.
+  useEffect(() => {
+    setError(null);
+    Promise.all([
+      api.dashboard.summary(accountId ? { accountId } : {}),
+      api.transactions.list({ pageSize: 6, accountId: accountId || undefined }),
+    ])
+      .then(([nextSummary, nextRecent]) => {
+        setSummary(nextSummary);
+        setRecent(nextRecent.items);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load dashboard.'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [accountId]);
 
   const accountName = useMemo(() => new Map(accounts.map((account) => [account.id, account.name])), [accounts]);
   const categoryName = useMemo(() => new Map(categories.map((category) => [category.id, category.name])), [categories]);
   const firstName = user?.displayName?.trim().split(/\s+/)[0] || user?.email?.split('@')[0] || 'there';
 
-  if (loading) return <p className="text-sm text-neutral-500">Loading…</p>;
-  if (error) return <p className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>;
+  if (loading && !summary) return <p className="text-sm text-neutral-500">Loading…</p>;
+  if (error && !summary) return <p className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>;
   if (!summary) return null;
 
   const currency = summary.currency;
@@ -66,6 +80,13 @@ export function DashboardPage() {
           <button type="button" onClick={() => setPeriod('year')} aria-pressed={period === 'year'} className={`min-h-10 rounded-lg px-5 text-sm font-semibold transition ${period === 'year' ? 'bg-white text-emerald-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Year</button>
         </div>
       </section>
+
+      {accounts.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium text-neutral-700 sm:max-w-xs">Filter by account<select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"><option value="">All accounts</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
+          {accountId && <p className="mt-2 text-xs text-neutral-500">Showing balances and totals for {accountName.get(accountId) ?? 'this account'} only.</p>}
+        </div>
+      )}
 
       <section className="grid grid-cols-1 gap-0.5 rounded-3xl border border-neutral-200/80 bg-white p-2 shadow-sm sm:p-3">
         <div className="flex items-center justify-between gap-3 rounded-2xl px-3 py-2">
@@ -97,7 +118,7 @@ export function DashboardPage() {
         </div>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
           {summary.monthly.map((item) => (
-            <Link key={item.key} to={`/transactions?month=${item.key}`} className="group relative min-w-0 rounded-2xl border border-neutral-200/80 bg-white/90 p-3 shadow-sm outline-none transition duration-200 hover:-translate-y-1.5 hover:border-emerald-300 hover:shadow-xl">
+            <Link key={item.key} to={`/transactions?month=${item.key}${accountId ? `&account=${accountId}` : ''}`} className="group relative min-w-0 rounded-2xl border border-neutral-200/80 bg-white/90 p-3 shadow-sm outline-none transition duration-200 hover:-translate-y-1.5 hover:border-emerald-300 hover:shadow-xl">
               <div className="pointer-events-none absolute left-1/2 top-0 z-20 hidden w-48 -translate-x-1/2 -translate-y-[calc(100%+10px)] rounded-xl bg-neutral-900 p-3 text-xs text-white shadow-xl sm:group-hover:block"><p className="mb-2 font-semibold">{item.label} summary</p><p className="flex justify-between"><span className="text-neutral-400">Debit</span><span className="text-emerald-300">{formatMoney(item.income, currency)}</span></p><p className="flex justify-between"><span className="text-neutral-400">Credit</span><span className="text-rose-300">{formatMoney(item.expense, currency)}</span></p><p className="mt-1 flex justify-between border-t border-neutral-700 pt-1"><span>Net income</span><span>{Number(item.net) >= 0 ? '+' : ''}{formatMoney(item.net, currency)}</span></p></div>
               <div className="mb-3 space-y-1 text-center text-[11px] tabular-nums"><p className="truncate font-medium text-emerald-600">+{formatMoney(item.income, currency)}</p><p className="truncate font-medium text-rose-500">-{formatMoney(item.expense, currency)}</p></div>
               <div className="flex h-28 w-full items-end justify-center gap-2 sm:h-32"><Bar heightPct={(Number(item.income) / chartMax) * 100} className="bg-emerald-500" /><Bar heightPct={(Number(item.expense) / chartMax) * 100} className="bg-rose-400" /></div>

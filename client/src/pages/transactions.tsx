@@ -154,9 +154,14 @@ export function TransactionsPage() {
         {(period === 'year' ? year >= now.getUTCFullYear() : year === now.getUTCFullYear() && month === now.getUTCMonth()) ? <span className="px-3 py-2 text-sm text-neutral-300">Next →</span> : <button onClick={() => shift(1)} className="rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-emerald-50">Next →</button>}
       </div>
 
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-neutral-700">Filter by account<select value={accountId} onChange={(event) => setAccountId(event.target.value)} className={inputClass}><option value="">All accounts</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
+        {accountId && <p className="mt-2 text-xs text-neutral-500">Showing balances and totals for {accountName.get(accountId) ?? 'this account'} only.</p>}
+      </div>
+
       {data && (
         <div className="mb-6 grid grid-cols-1 gap-0.5 rounded-2xl border border-neutral-200 bg-white p-2 shadow-sm sm:p-3">
-          {period === 'year'
+          {period === 'year' || accountId
             ? <SummaryRow label="Starting balance" value={formatMoney(data.startingBalance, currency)} tone="neutral" />
             : <InlineStartingBalance year={year} month={month} data={data} currency={currency} onSaved={loadMonth} />}
           <SummaryRow label="Current balance" value={formatMoney(data.currentBalance, currency)} tone="neutral" />
@@ -167,7 +172,6 @@ export function TransactionsPage() {
       )}
 
       <div className="mb-5 flex flex-wrap items-end gap-3">
-        <label className="w-full min-w-0 flex-1 text-sm font-medium text-neutral-700 sm:min-w-56">Filter by account<select value={accountId} onChange={(event) => setAccountId(event.target.value)} className={inputClass}><option value="">All accounts</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
         <label className="w-full min-w-0 flex-1 text-sm font-medium text-neutral-700 sm:min-w-56">Filter by category<select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className={inputClass}><option value="">All categories</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
         {(categoryId || accountId) && <button onClick={() => { setCategoryId(''); setAccountId(''); }} className="min-h-11 rounded-lg border border-neutral-200 px-3 py-2 text-sm text-neutral-600">Clear filters</button>}
       </div>
@@ -401,9 +405,15 @@ function TransactionForm({ accounts, categories, onClose, onSaved }: {
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-    setPending(true);
     const f = new FormData(e.currentTarget);
     const categoryId = String(f.get('categoryId') || '');
+    // A category is required for income/expense (transfers don't use one). Don't
+    // proceed until one is picked.
+    if (!isTransfer && !categoryId) {
+      setError('Please select a category.');
+      return;
+    }
+    setPending(true);
     try {
       if (isTransfer) {
         await api.transactions.transfer({
@@ -451,7 +461,7 @@ function TransactionForm({ accounts, categories, onClose, onSaved }: {
           {isTransfer ? (
             <label className="block"><span className="mb-1.5 block text-sm font-medium text-neutral-700">To account</span><select value={effectiveToAccountId} onChange={(event) => setToAccountId(event.target.value)} required className="min-h-12 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-neutral-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">{toOptions.map((account) => <option key={account.id} value={account.id}>{account.name} ({account.currency})</option>)}</select></label>
           ) : (
-            <label className="block"><span className="mb-1.5 flex items-center justify-between gap-3 text-sm font-medium text-neutral-700"><span>Category</span><Link to="/settings" className="text-xs font-semibold text-emerald-600 transition hover:text-emerald-700 hover:underline">Add or edit categories in Settings →</Link></span><select name="categoryId" required className="min-h-12 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-neutral-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">{visibleCategories.length === 0 && <option value="">No categories available — add one in Settings</option>}{visibleCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+            <label className="block"><span className="mb-1.5 flex items-center justify-between gap-3 text-sm font-medium text-neutral-700"><span>Category</span><Link to="/settings" className="text-xs font-semibold text-emerald-600 transition hover:text-emerald-700 hover:underline">Add or edit categories in Settings →</Link></span><select name="categoryId" defaultValue="" className="min-h-12 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-neutral-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">{visibleCategories.length === 0 ? <option value="">No categories available — add one in Settings</option> : <option value="">Select a category</option>}{visibleCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
           )}
 
           <label className="block"><span className="mb-1.5 block text-sm font-medium text-neutral-700">Amount</span><div className="flex min-h-12 items-center rounded-xl border border-neutral-300 px-3 transition focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100"><span className="select-none pr-2 text-sm font-semibold text-neutral-400">{selectedCurrency || '—'}</span><input name="amount" inputMode="decimal" placeholder="0.00" autoFocus required className="min-w-0 flex-1 bg-transparent py-2.5 text-neutral-900 outline-none" /></div></label>

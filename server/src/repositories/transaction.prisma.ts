@@ -144,29 +144,45 @@ class PrismaTransactionRepository implements TransactionRepository {
     to: Date,
     openingTotal: string,
     startingOverride: string | null,
+    accountId?: string,
   ): Promise<MonthSummary> {
-    const inMonth = { userId, deletedAt: null, occurredAt: { gte: from, lt: to } };
-    const sum = (where: object, type: 'INCOME' | 'EXPENSE') =>
+    const scope = accountId ? { accountId } : {};
+    const inMonth = { userId, deletedAt: null, occurredAt: { gte: from, lt: to }, ...scope };
+    const sum = (where: object, type: 'INCOME' | 'EXPENSE' | 'TRANSFER_IN' | 'TRANSFER_OUT') =>
       prisma.transaction.aggregate({ _sum: { amount: true }, where: { ...where, type } });
+    const amount = (row: { _sum: { amount: Prisma.Decimal | null } }) =>
+      row._sum.amount ?? new Prisma.Decimal(0);
 
     const [mInc, mExp] = await Promise.all([sum(inMonth, 'INCOME'), sum(inMonth, 'EXPENSE')]);
-    const income = mInc._sum.amount ?? new Prisma.Decimal(0);
-    const expense = mExp._sum.amount ?? new Prisma.Decimal(0);
+    const income = amount(mInc);
+    const expense = amount(mExp);
     const net = income.minus(expense);
 
     let startingBalance: Prisma.Decimal;
-    if (startingOverride !== null) {
+    let currentBalance: Prisma.Decimal;
+    if (accountId) {
+      // Scoped to one account: its running balance starts from the account's own
+      // opening balance, and transfer legs (in/out) move money to/from it, so they
+      // count toward the balance even though they're excluded from income/expense.
+      const before = { userId, deletedAt: null, occurredAt: { lt: from }, accountId };
+      const [bInc, bExp, bTin, bTout, mTin, mTout] = await Promise.all([
+        sum(before, 'INCOME'), sum(before, 'EXPENSE'), sum(before, 'TRANSFER_IN'), sum(before, 'TRANSFER_OUT'),
+        sum(inMonth, 'TRANSFER_IN'), sum(inMonth, 'TRANSFER_OUT'),
+      ]);
+      const netBefore = amount(bInc).plus(amount(bTin)).minus(amount(bExp)).minus(amount(bTout));
+      startingBalance = new Prisma.Decimal(openingTotal).plus(netBefore);
+      currentBalance = startingBalance.plus(net).plus(amount(mTin)).minus(amount(mTout));
+    } else if (startingOverride !== null) {
       startingBalance = new Prisma.Decimal(startingOverride);
+      currentBalance = startingBalance.plus(net);
     } else {
       // Computed running balance: opening total + net of everything before the month.
       const before = { userId, deletedAt: null, occurredAt: { lt: from } };
       const [bInc, bExp] = await Promise.all([sum(before, 'INCOME'), sum(before, 'EXPENSE')]);
-      const netBefore = (bInc._sum.amount ?? new Prisma.Decimal(0)).minus(
-        bExp._sum.amount ?? new Prisma.Decimal(0),
-      );
+      const netBefore = amount(bInc).minus(amount(bExp));
       startingBalance = new Prisma.Decimal(openingTotal).plus(netBefore);
+      currentBalance = startingBalance.plus(net);
     }
-    const currentBalance = startingBalance.plus(net);
 
     return {
       income: income.toString(),
@@ -174,7 +190,7 @@ class PrismaTransactionRepository implements TransactionRepository {
       net: net.toString(),
       startingBalance: startingBalance.toString(),
       currentBalance: currentBalance.toString(),
-      isManualStart: startingOverride !== null,
+      isManualStart: !accountId && startingOverride !== null,
     };
   }
 

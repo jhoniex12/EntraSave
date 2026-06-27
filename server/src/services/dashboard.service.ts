@@ -15,16 +15,18 @@ import { transactionService } from '@/services/transaction.service';
 export class DashboardService {
   constructor(private readonly repo: DashboardRepository) {}
 
-  async getSummary(ctx: AuthContext): Promise<DashboardSummaryDTO> {
+  async getSummary(ctx: AuthContext, accountId?: string): Promise<DashboardSummaryDTO> {
     const ranges = currentYearMonths();
     const now = new Date();
     const yearToDate = {
       start: new Date(Date.UTC(now.getUTCFullYear(), 0, 1)),
       end: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)),
     };
+    // `accountId` (optional) scopes the whole summary — balances, monthly trend,
+    // year-to-date and category breakdowns — to one account.
     const [overview, currentSummary] = await Promise.all([
-      this.repo.overview(ctx.userId, ranges, yearToDate),
-      transactionService.getMonthSummary(ctx, now.getUTCFullYear(), now.getUTCMonth()),
+      this.repo.overview(ctx.userId, ranges, yearToDate, accountId),
+      transactionService.getMonthSummary(ctx, now.getUTCFullYear(), now.getUTCMonth(), accountId),
     ]);
 
     const currentKey = ranges.at(-1)?.key;
