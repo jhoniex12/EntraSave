@@ -101,6 +101,23 @@ export function LandingPage() {
   const { user } = useAuth();
   const signedIn = Boolean(user);
 
+  // Keep the demo overview anchored to the current month so the marketing page
+  // never shows a stale period. Figures stay illustrative (and consistent:
+  // +A$2,292 = A$3,780 income − A$1,488 expenses).
+  const now = new Date();
+  const monthYearLabel = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  const chartData = [
+    { a: 70, b: 40 },
+    { a: 85, b: 55 },
+    { a: 60, b: 48 },
+    { a: 95, b: 62 },
+    { a: 78, b: 50 },
+    { a: 90, b: 38 },
+  ].map((d, i) => ({
+    ...d,
+    m: new Date(now.getFullYear(), now.getMonth() - (5 - i), 1).toLocaleString('en-US', { month: 'short' }),
+  }));
+
   return (
     <div className="min-h-screen bg-white text-neutral-900">
       {/* Nav */}
@@ -169,7 +186,7 @@ export function LandingPage() {
             <div className="rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl shadow-neutral-200/60">
               <div className="rounded-xl bg-neutral-50 p-5 sm:p-6">
                 <div className="mb-4 flex items-center justify-between">
-                  <p className="text-sm font-semibold text-neutral-800">June 2026 overview</p>
+                  <p className="text-sm font-semibold text-neutral-800">{monthYearLabel} overview</p>
                   <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">+ A$2,292 this month</span>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-3">
@@ -190,14 +207,7 @@ export function LandingPage() {
                     <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-400" />Expenses</span>
                   </div>
                   <div className="flex items-end gap-3">
-                    {[
-                      { m: 'Jan', a: 70, b: 40 },
-                      { m: 'Feb', a: 85, b: 55 },
-                      { m: 'Mar', a: 60, b: 48 },
-                      { m: 'Apr', a: 95, b: 62 },
-                      { m: 'May', a: 78, b: 50 },
-                      { m: 'Jun', a: 90, b: 38 },
-                    ].map((d) => (
+                    {chartData.map((d) => (
                       <div key={d.m} className="flex flex-1 flex-col items-center gap-2">
                         <div className="flex h-28 w-full items-end justify-center gap-1">
                           <div className="w-2.5 rounded-t bg-emerald-500 sm:w-3" style={{ height: `${d.a}%` }} />
@@ -252,7 +262,7 @@ export function LandingPage() {
             <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
               <div className="mb-4 flex items-center justify-between">
                 <p className="text-sm font-semibold text-neutral-800">Budget by category</p>
-                <span className="text-xs text-neutral-400">June 2026</span>
+                <span className="text-xs text-neutral-400">{monthYearLabel}</span>
               </div>
               <div className="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
                 <strong>Groceries is over budget.</strong> A$445.56 of A$400.00 used (111%).
