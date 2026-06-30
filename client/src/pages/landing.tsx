@@ -162,10 +162,6 @@ export function LandingPage() {
       <section className="relative overflow-hidden">
         <div className="pointer-events-none absolute inset-x-0 -top-40 h-[28rem] bg-gradient-to-b from-emerald-100/70 via-white to-white blur-2xl dark:from-emerald-950/30" aria-hidden="true" />
         <div className="relative mx-auto max-w-6xl px-6 pb-20 pt-20 text-center md:pt-28">
-          <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            Private by design
-          </span>
           <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-semibold tracking-tight text-neutral-900 sm:text-5xl md:text-6xl">
             Save Smarter.
             <span className="text-emerald-600"> Live Better.</span>
