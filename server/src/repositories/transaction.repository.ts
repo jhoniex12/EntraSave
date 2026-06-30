@@ -92,7 +92,8 @@ export interface TransactionRepository {
    * (if non-null) is used as the starting balance directly, skipping the computed
    * running balance — only honoured for the all-accounts view. When `accountId`
    * is set the totals and balances are scoped to that account, and transfer legs
-   * count toward its running balance (across all accounts they net to zero).
+   * fold into its income (received) / expense (sent) totals; the all-accounts view
+   * keeps income/expense pure since internal transfers net to zero.
    */
   monthSummary(
     userId: string,

@@ -109,7 +109,10 @@ class PrismaAccountRepository implements AccountRepository {
         where: {
           userId,
           deletedAt: null,
-          type: { in: ['INCOME', 'EXPENSE'] },
+          // Each account treats a transfer as income (money in) or expense (money
+          // out), so transfer legs are pulled in and folded into this account's
+          // income/expense totals below.
+          type: { in: ['INCOME', 'EXPENSE', 'TRANSFER_IN', 'TRANSFER_OUT'] },
           occurredAt: { gte: monthStart, lt: monthEnd },
           account: accountWhere,
         },
@@ -129,9 +132,13 @@ class PrismaAccountRepository implements AccountRepository {
           .minus(total.expense)
           .minus(total.transferOut)
           .toString(),
-        incomeThisMonth: month.income.toString(),
-        expenseThisMonth: month.expense.toString(),
-        netThisMonth: month.income.minus(month.expense).toString(),
+        incomeThisMonth: month.income.plus(month.transferIn).toString(),
+        expenseThisMonth: month.expense.plus(month.transferOut).toString(),
+        netThisMonth: month.income
+          .plus(month.transferIn)
+          .minus(month.expense)
+          .minus(month.transferOut)
+          .toString(),
       };
     });
   }

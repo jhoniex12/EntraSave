@@ -148,39 +148,36 @@ class PrismaTransactionRepository implements TransactionRepository {
   ): Promise<MonthSummary> {
     const scope = accountId ? { accountId } : {};
     const inMonth = { userId, deletedAt: null, occurredAt: { gte: from, lt: to }, ...scope };
-    const sum = (where: object, type: 'INCOME' | 'EXPENSE' | 'TRANSFER_IN' | 'TRANSFER_OUT') =>
-      prisma.transaction.aggregate({ _sum: { amount: true }, where: { ...where, type } });
+    // Scoped to one account, a transfer is treated as income (received) or expense
+    // (sent) on that account, so its legs fold into the income/expense totals. The
+    // all-accounts view keeps them pure: internal transfers cancel out and would
+    // otherwise inflate both totals with money that never left the user's control.
+    const incomeTypes: Array<'INCOME' | 'TRANSFER_IN'> = accountId ? ['INCOME', 'TRANSFER_IN'] : ['INCOME'];
+    const expenseTypes: Array<'EXPENSE' | 'TRANSFER_OUT'> = accountId ? ['EXPENSE', 'TRANSFER_OUT'] : ['EXPENSE'];
+    const sum = (where: object, types: string[]) =>
+      prisma.transaction.aggregate({ _sum: { amount: true }, where: { ...where, type: { in: types } } });
     const amount = (row: { _sum: { amount: Prisma.Decimal | null } }) =>
       row._sum.amount ?? new Prisma.Decimal(0);
 
-    const [mInc, mExp] = await Promise.all([sum(inMonth, 'INCOME'), sum(inMonth, 'EXPENSE')]);
+    const [mInc, mExp] = await Promise.all([sum(inMonth, incomeTypes), sum(inMonth, expenseTypes)]);
     const income = amount(mInc);
     const expense = amount(mExp);
     const net = income.minus(expense);
 
     let startingBalance: Prisma.Decimal;
     let currentBalance: Prisma.Decimal;
-    if (accountId) {
-      // Scoped to one account: its running balance starts from the account's own
-      // opening balance, and transfer legs (in/out) move money to/from it, so they
-      // count toward the balance even though they're excluded from income/expense.
-      const before = { userId, deletedAt: null, occurredAt: { lt: from }, accountId };
-      const [bInc, bExp, bTin, bTout, mTin, mTout] = await Promise.all([
-        sum(before, 'INCOME'), sum(before, 'EXPENSE'), sum(before, 'TRANSFER_IN'), sum(before, 'TRANSFER_OUT'),
-        sum(inMonth, 'TRANSFER_IN'), sum(inMonth, 'TRANSFER_OUT'),
-      ]);
-      const netBefore = amount(bInc).plus(amount(bTin)).minus(amount(bExp)).minus(amount(bTout));
-      startingBalance = new Prisma.Decimal(openingTotal).plus(netBefore);
-      currentBalance = startingBalance.plus(net).plus(amount(mTin)).minus(amount(mTout));
-    } else if (startingOverride !== null) {
-      startingBalance = new Prisma.Decimal(startingOverride);
-      currentBalance = startingBalance.plus(net);
-    } else {
+    if (accountId || startingOverride === null) {
       // Computed running balance: opening total + net of everything before the month.
-      const before = { userId, deletedAt: null, occurredAt: { lt: from } };
-      const [bInc, bExp] = await Promise.all([sum(before, 'INCOME'), sum(before, 'EXPENSE')]);
+      // With transfers folded into income/expense (single-account scope), this net
+      // already moves the balance to/from the account; across all accounts transfers
+      // cancel, so the pure income/expense net is the correct movement either way.
+      const before = { userId, deletedAt: null, occurredAt: { lt: from }, ...scope };
+      const [bInc, bExp] = await Promise.all([sum(before, incomeTypes), sum(before, expenseTypes)]);
       const netBefore = amount(bInc).minus(amount(bExp));
       startingBalance = new Prisma.Decimal(openingTotal).plus(netBefore);
+      currentBalance = startingBalance.plus(net);
+    } else {
+      startingBalance = new Prisma.Decimal(startingOverride);
       currentBalance = startingBalance.plus(net);
     }
 

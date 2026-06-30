@@ -19,14 +19,19 @@ class PrismaDashboardRepository implements DashboardRepository {
     yearToDate: { start: Date; end: Date },
     accountId?: string,
   ): Promise<DashboardOverview> {
-    // When scoped to one account, every transaction aggregate is narrowed to it.
+    // When scoped to one account, every transaction aggregate is narrowed to it,
+    // and a transfer is treated as income (received) / expense (sent) on that
+    // account. The all-accounts view keeps income/expense pure: internal transfers
+    // cancel out and would otherwise inflate both totals (and the trend chart).
     const accountScope = accountId ? { accountId } : {};
-    const transactionSum = (type: 'INCOME' | 'EXPENSE', start: Date, end: Date) =>
+    const incomeTypes: Array<'INCOME' | 'TRANSFER_IN'> = accountId ? ['INCOME', 'TRANSFER_IN'] : ['INCOME'];
+    const expenseTypes: Array<'EXPENSE' | 'TRANSFER_OUT'> = accountId ? ['EXPENSE', 'TRANSFER_OUT'] : ['EXPENSE'];
+    const transactionSum = (types: string[], start: Date, end: Date) =>
       prisma.transaction.aggregate({
         _sum: { amount: true },
         where: {
           userId,
-          type,
+          type: { in: types },
           deletedAt: null,
           occurredAt: { gte: start, lt: end },
           ...accountScope,
@@ -65,12 +70,12 @@ class PrismaDashboardRepository implements DashboardRepository {
       }),
       Promise.all(
         ranges.flatMap((r) => [
-          transactionSum('INCOME', r.start, r.end),
-          transactionSum('EXPENSE', r.start, r.end),
+          transactionSum(incomeTypes, r.start, r.end),
+          transactionSum(expenseTypes, r.start, r.end),
         ]),
       ),
-      transactionSum('INCOME', yearToDate.start, yearToDate.end),
-      transactionSum('EXPENSE', yearToDate.start, yearToDate.end),
+      transactionSum(incomeTypes, yearToDate.start, yearToDate.end),
+      transactionSum(expenseTypes, yearToDate.start, yearToDate.end),
       currentMonth
         ? categorySums(currentMonth.start, currentMonth.end)
         : Promise.resolve([]),

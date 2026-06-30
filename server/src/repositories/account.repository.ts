@@ -30,7 +30,9 @@ export interface UpdateAccountData {
 export interface AccountFinancialSummaryRecord {
   account: Account;
   currentBalance: string;
+  /** Income this month, including transfers received into the account. */
   incomeThisMonth: string;
+  /** Expense this month, including transfers sent out of the account. */
   expenseThisMonth: string;
   netThisMonth: string;
 }
