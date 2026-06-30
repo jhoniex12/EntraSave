@@ -50,7 +50,7 @@ export function AppLayout() {
       <header className="sticky top-0 z-30 border-b border-neutral-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
           <div className="flex items-center gap-8">
-          <NavLink to="/dashboard" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-neutral-900" aria-label="EntraSave dashboard">
+          <NavLink to="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-neutral-900" aria-label="EntraSave home">
             <img src="/brand/logo-mark.svg" alt="" width={32} height={32} className="h-8 w-8 dark:hidden" />
             <img src="/brand/logo-mark-light.svg" alt="" width={32} height={32} className="hidden h-8 w-8 dark:block" />
             <span>Entra<span className="text-emerald-500">Save</span></span>
