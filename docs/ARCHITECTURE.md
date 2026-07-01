@@ -56,6 +56,7 @@ EntraSave/
   AGENTS.md
   CODING_STANDARDS.md
   SECURITY.md
+  ARCHITECTURE.md
 ```
 
 Both packages define `@/*` as their local `src/*` alias. They do not import
