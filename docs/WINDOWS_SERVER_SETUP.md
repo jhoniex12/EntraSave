@@ -227,9 +227,21 @@ Service control later: `nssm restart EntraSaveAPI`, `nssm stop EntraSaveAPI`,
 `nssm status EntraSaveAPI`. (`.env` is loaded by the app via dotenv, so you don't set
 environment variables in NSSM.)
 
-> Alternative: if you prefer PM2, `npm i -g pm2 pm2-windows-startup`, then
-> `pm2 start npm --name EntraSaveAPI -- run start` (cwd = server), `pm2 save`,
-> `pm2-startup install`. NSSM is recommended for the simplest, most reliable service.
+> Alternative: if you prefer PM2, `npm i -g pm2 pm2-windows-startup`, then run the
+> local `tsx` CLI directly from the server folder:
+>
+> ```powershell
+> cd C:\entrasaveweb\server
+> pm2 delete EntraSaveAPI
+> pm2 start .\node_modules\tsx\dist\cli.cjs --name EntraSaveAPI -- src/server.ts
+> pm2 save
+> pm2-startup install
+> ```
+>
+> Do not start PM2 with `npm.cmd` as a Node script. If PM2 logs show
+> `C:\PROGRAM FILES\NODEJS\NPM.CMD:1` followed by `SyntaxError: Unexpected token ':'`,
+> PM2 is executing the Windows npm batch file with Node instead of launching it as a
+> command. NSSM is recommended for the simplest, most reliable service.
 
 ---
 

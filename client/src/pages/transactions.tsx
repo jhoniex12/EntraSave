@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { api } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api';
 import type { AccountDTO, BudgetStatusDTO, CategoryDTO, MonthResponse, TransactionDTO } from '@/lib/types';
-import { formatMoney } from '@/lib/format';
+import { formatMoney, toDateTimeLocalValue, dateTimeLocalToISO } from '@/lib/format';
 import { useAuth } from '@/auth/auth-context';
 import { Modal } from '@/components/modal';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -151,7 +151,7 @@ export function TransactionsPage() {
           <button onClick={() => shift(-1)} className="rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-emerald-50">← Prev</button>
         </div>
         <div className="text-center"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-600">{period === 'year' ? 'Yearly overview' : 'Monthly overview'}</p><h2 className="mt-1 text-lg font-semibold tracking-tight sm:text-xl">{period === 'year' ? year : `${MONTHS[month]} ${year}`}</h2></div>
-        {(period === 'year' ? year >= now.getUTCFullYear() : year === now.getUTCFullYear() && month === now.getUTCMonth()) ? <span className="px-3 py-2 text-sm text-neutral-300">Next →</span> : <button onClick={() => shift(1)} className="rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-emerald-50">Next →</button>}
+        {(period === 'year' ? year >= now.getFullYear() : year === now.getFullYear() && month === now.getMonth()) ? <span className="px-3 py-2 text-sm text-neutral-300">Next →</span> : <button onClick={() => shift(1)} className="rounded-xl border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-emerald-50">Next →</button>}
       </div>
 
       <div className="mb-6">
@@ -309,7 +309,7 @@ function TransactionEditor({ transaction, accountName, categories, onClose, onSa
         categoryId: selectedCategory || null,
         amount: String(data.get('amount')),
         description: String(data.get('description') || '') || null,
-        occurredAt: new Date(String(data.get('occurredAt'))).toISOString(),
+        occurredAt: dateTimeLocalToISO(String(data.get('occurredAt'))),
       });
       onSaved();
     } catch (err) { setError(err instanceof ApiError ? err.message : 'Failed to update transaction.'); }
@@ -421,7 +421,7 @@ function TransactionForm({ accounts, categories, onClose, onSaved }: {
           toAccountId: effectiveToAccountId,
           amount: String(f.get('amount')),
           description: String(f.get('description') || '') || undefined,
-          occurredAt: new Date(String(f.get('occurredAt'))).toISOString(),
+          occurredAt: dateTimeLocalToISO(String(f.get('occurredAt'))),
           idempotencyKey: idempotencyKey.current,
         });
       } else {
@@ -431,7 +431,7 @@ function TransactionForm({ accounts, categories, onClose, onSaved }: {
           amount: String(f.get('amount')),
           categoryId: categoryId || undefined,
           description: String(f.get('description') || '') || undefined,
-          occurredAt: new Date(String(f.get('occurredAt'))).toISOString(),
+          occurredAt: dateTimeLocalToISO(String(f.get('occurredAt'))),
           idempotencyKey: idempotencyKey.current,
         });
       }
@@ -466,7 +466,7 @@ function TransactionForm({ accounts, categories, onClose, onSaved }: {
 
           <label className="block"><span className="mb-1.5 block text-sm font-medium text-neutral-700">Amount</span><div className="flex min-h-12 items-center rounded-xl border border-neutral-300 px-3 transition focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100"><span className="select-none pr-2 text-sm font-semibold text-neutral-400">{selectedCurrency || '—'}</span><input name="amount" inputMode="decimal" placeholder="0.00" autoFocus required className="min-w-0 flex-1 bg-transparent py-2.5 text-neutral-900 outline-none" /></div></label>
           <label className="block"><span className="mb-1.5 block text-sm font-medium text-neutral-700">Description <span className="font-normal text-neutral-400">(optional)</span></span><input name="description" placeholder="What was this for?" maxLength={200} className="min-h-12 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" /></label>
-          <label className="block"><span className="mb-1.5 block text-sm font-medium text-neutral-700">Date and time</span><input name="occurredAt" type="datetime-local" required defaultValue={new Date().toISOString().slice(0, 16)} className="min-h-12 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-neutral-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" /></label>
+          <label className="block"><span className="mb-1.5 block text-sm font-medium text-neutral-700">Date and time</span><input name="occurredAt" type="datetime-local" required defaultValue={toDateTimeLocalValue(new Date())} className="min-h-12 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-neutral-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" /></label>
           {error && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
           <div className="flex justify-end gap-3 border-t border-neutral-100 pt-4"><button type="button" onClick={close} disabled={pending} className="min-h-11 rounded-xl border border-neutral-300 px-4 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50">Cancel</button><button type="submit" disabled={pending} className="min-h-11 rounded-xl bg-emerald-600 px-5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">{pending ? 'Adding…' : 'Add transaction'}</button></div>
         </form>
@@ -478,9 +478,10 @@ function TransactionForm({ accounts, categories, onClose, onSaved }: {
 
 function parseMonth(value: string | null, fallback: Date): { year: number; month: number } {
   const match = /^(\d{4})-(\d{2})$/.exec(value ?? '');
-  if (!match) return { year: fallback.getUTCFullYear(), month: fallback.getUTCMonth() };
+  // Wall-clock model: the default month is the viewer's LOCAL current month.
+  if (!match) return { year: fallback.getFullYear(), month: fallback.getMonth() };
   const year = Number(match[1]);
   const month = Number(match[2]) - 1;
-  if (year < 2000 || year > 2100 || month < 0 || month > 11) return { year: fallback.getUTCFullYear(), month: fallback.getUTCMonth() };
+  if (year < 2000 || year > 2100 || month < 0 || month > 11) return { year: fallback.getFullYear(), month: fallback.getMonth() };
   return { year, month };
 }

@@ -32,6 +32,30 @@ export function formatDate(iso: string): string {
   });
 }
 
+/**
+ * Transaction dates are timezone-independent wall-clock values: the date/time the
+ * user types is stored and shown verbatim, regardless of the server's or the
+ * viewer's timezone. These two helpers bridge a `datetime-local` input (a bare
+ * "YYYY-MM-DDTHH:mm" wall-clock string) and the ISO value we store. Because
+ * storage and display both render in UTC, we deliberately do NOT apply the local
+ * timezone offset here — the typed wall clock is stored as-is.
+ */
+
+/** Current local wall clock as a `datetime-local` value ("YYYY-MM-DDTHH:mm"). */
+export function toDateTimeLocalValue(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/**
+ * Convert a `datetime-local` value ("YYYY-MM-DDTHH:mm") to the stored ISO string
+ * by treating the typed wall clock as UTC, so it round-trips unchanged through
+ * storage and UTC display no matter where the server or viewer sits.
+ */
+export function dateTimeLocalToISO(value: string): string {
+  return new Date(`${value}Z`).toISOString();
+}
+
 const TYPE_LABELS: Record<string, string> = {
   CHECKING: 'Checking',
   SAVINGS: 'Savings',
