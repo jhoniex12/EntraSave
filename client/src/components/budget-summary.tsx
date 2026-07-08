@@ -24,7 +24,7 @@ export function BudgetSummary({ budgets, names, currency, selectedCategoryId = '
     <section className={`overflow-hidden rounded-3xl border border-neutral-200/80 bg-white shadow-sm ${className}`}>
       <div className="flex items-end justify-between gap-3 border-b border-neutral-100 bg-gradient-to-r from-neutral-50 to-emerald-50/40 px-3 py-2.5 sm:px-4 sm:py-3">
         <div className="min-w-0"><h3 className="text-sm font-semibold text-neutral-800">Budget overview</h3><p className="mt-0.5 truncate text-[11px] text-neutral-400 sm:text-xs">This month's spending against your limits.</p></div>
-        <Link to="/settings" className="shrink-0 text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 hover:underline sm:text-xs">View all budgets →</Link>
+        <Link to="/settings/budget" className="shrink-0 text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 hover:underline sm:text-xs">View all budgets →</Link>
       </div>
       {sorted.length > 0 && (
         <div className="border-b border-neutral-100 bg-neutral-50/60 px-3 py-2.5 sm:px-4">
