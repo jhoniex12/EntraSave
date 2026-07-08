@@ -6,6 +6,7 @@ import type { AccountDTO, BudgetStatusDTO, CategoryDTO, MonthResponse, Transacti
 import { formatMoney, toDateTimeLocalValue, dateTimeLocalToISO } from '@/lib/format';
 import { useAuth } from '@/auth/auth-context';
 import { Modal } from '@/components/modal';
+import { BudgetSummary } from '@/components/budget-summary';
 import { Link, useSearchParams } from 'react-router-dom';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -26,6 +27,7 @@ export function TransactionsPage() {
   const [categoryId, setCategoryId] = useState(searchParams.get('category') ?? '');
   const [accountId, setAccountId] = useState(searchParams.get('account') ?? '');
   const [period, setPeriod] = useState<'month' | 'year'>(searchParams.get('period') === 'year' ? 'year' : 'month');
+  const [showBudgets, setShowBudgets] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -180,24 +182,23 @@ export function TransactionsPage() {
       <div className="space-y-4">
         {/* Controls: period, month navigation, and filters */}
         <div className="rounded-3xl border border-neutral-200/80 bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="inline-grid grid-cols-2 gap-1 rounded-xl bg-neutral-100 p-1" role="group" aria-label="Summary period">
+          <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-end xl:gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+              <div className="grid grid-cols-2 gap-1 rounded-xl bg-neutral-100 p-1 sm:inline-grid sm:w-auto" role="group" aria-label="Summary period">
                 <button type="button" onClick={() => setPeriod('month')} aria-pressed={period === 'month'} className={`min-h-10 rounded-lg px-6 text-sm font-semibold transition ${period === 'month' ? 'bg-white text-emerald-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Month</button>
                 <button type="button" onClick={() => setPeriod('year')} aria-pressed={period === 'year'} className={`min-h-10 rounded-lg px-6 text-sm font-semibold transition ${period === 'year' ? 'bg-white text-emerald-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Year</button>
               </div>
-              <div className="inline-flex items-center gap-1 rounded-xl border border-neutral-200 p-1">
+              <div className="flex items-center gap-1 rounded-xl border border-neutral-200 p-1">
                 <button type="button" onClick={() => shift(-1)} aria-label="Previous period" className="grid min-h-9 min-w-9 place-items-center rounded-lg text-neutral-500 transition hover:bg-emerald-50 hover:text-emerald-700"><ChevronLeftIcon /></button>
-                <span className="flex min-w-[8.5rem] items-center justify-center gap-2 px-1 text-sm font-semibold text-neutral-800"><CalendarIcon className="h-4 w-4 text-neutral-400" />{period === 'year' ? year : `${MONTHS[month]} ${year}`}</span>
+                <span className="flex flex-1 items-center justify-center gap-2 px-1 text-sm font-semibold text-neutral-800 sm:min-w-[8.5rem] sm:flex-none"><CalendarIcon className="h-4 w-4 text-neutral-400" />{period === 'year' ? year : `${MONTHS[month]} ${year}`}</span>
                 {(period === 'year' ? year >= now.getFullYear() : year === now.getFullYear() && month === now.getMonth())
                   ? <span aria-hidden="true" className="grid min-h-9 min-w-9 place-items-center rounded-lg text-neutral-300"><ChevronRightIcon /></span>
                   : <button type="button" onClick={() => shift(1)} aria-label="Next period" className="grid min-h-9 min-w-9 place-items-center rounded-lg text-neutral-500 transition hover:bg-emerald-50 hover:text-emerald-700"><ChevronRightIcon /></button>}
               </div>
             </div>
-            <div className="flex flex-wrap items-end gap-3">
-              <label className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-none"><span className="text-[11px] font-medium text-neutral-500">Account</span><select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="min-h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm text-neutral-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"><option value="">All accounts</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
-              <label className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-none"><span className="text-[11px] font-medium text-neutral-500">Category</span><select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="min-h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm text-neutral-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"><option value="">All categories</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
-              <button type="button" onClick={() => { setCategoryId(''); setAccountId(''); }} disabled={!hasFilters} title="Clear filters" aria-label="Clear filters" className="relative inline-flex min-h-11 items-center gap-2 rounded-xl border border-neutral-200 px-4 text-sm font-medium text-neutral-600 transition enabled:hover:border-emerald-300 enabled:hover:bg-emerald-50 enabled:hover:text-emerald-700 disabled:opacity-50"><FilterIcon className="h-4 w-4" />Filters{hasFilters && <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />}</button>
+            <div className="flex items-end gap-3 sm:flex-wrap xl:border-l xl:border-neutral-200 xl:pl-4">
+              <label className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-none"><span className="text-[11px] font-medium text-neutral-500">Account</span><select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="min-h-11 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm text-neutral-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 sm:w-48"><option value="">All accounts</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
+              <button type="button" onClick={() => { setCategoryId(''); setAccountId(''); }} disabled={!hasFilters} title="Clear filters" aria-label="Clear filters" className="relative inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-neutral-200 px-4 text-sm font-medium text-neutral-600 transition enabled:hover:border-emerald-300 enabled:hover:bg-emerald-50 enabled:hover:text-emerald-700 disabled:opacity-50"><FilterIcon className="h-4 w-4" />Filters{hasFilters && <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />}</button>
             </div>
           </div>
           {accountId && <p className="mt-3 text-xs text-neutral-500">Showing balances and totals for {accountName.get(accountId) ?? 'this account'} only.</p>}
@@ -215,6 +216,20 @@ export function TransactionsPage() {
               <StatTile label="Expense" value={`-${formatMoney(data.expense, currency)}`} tone="rose" icon={<ArrowDownIcon />} />
               <StatTile label={period === 'year' ? 'Net this year' : 'Net this month'} value={`${Number(data.net) >= 0 ? '+' : ''}${formatMoney(data.net, currency)}`} tone={Number(data.net) >= 0 ? 'emerald' : 'rose'} icon={<TrendIcon />} />
             </div>
+            {period === 'month' && budgets.length > 0 && (
+              <div className="mt-1 border-t border-neutral-100 pt-1">
+                <button type="button" onClick={() => setShowBudgets((value) => !value)} aria-expanded={showBudgets} aria-controls="budget-overview-panel" className="flex w-full items-center justify-center gap-1.5 rounded-2xl px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50">
+                  {showBudgets ? 'Hide budget overview' : 'Show budget overview'}
+                  <svg viewBox="0 0 24 24" className={`h-4 w-4 transition-transform ${showBudgets ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {period === 'month' && showBudgets && budgets.length > 0 && (
+          <div id="budget-overview-panel">
+            <BudgetSummary budgets={budgets} names={categoryName} currency={currency} selectedCategoryId={categoryId} onSelectCategory={setCategoryId} />
           </div>
         )}
 
@@ -242,8 +257,10 @@ export function TransactionsPage() {
         {/* Transactions list */}
         <div className="rounded-3xl border border-neutral-200/80 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-neutral-100 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-semibold text-neutral-700">{visibleItems.length} transaction{visibleItems.length === 1 ? '' : 's'}</p>
-            <div className="flex items-center gap-2">
+            <p className="shrink-0 text-sm font-semibold text-neutral-700">{visibleItems.length} transaction{visibleItems.length === 1 ? '' : 's'}</p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} aria-label="Filter by category" className="min-h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm text-neutral-700 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 sm:w-44"><option value="">All categories</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
+              <div className="flex items-center gap-2">
               <div className="relative flex-1 sm:flex-none">
                 <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
                 <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search transactions..." aria-label="Search transactions" className="min-h-10 w-full rounded-xl border border-neutral-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 sm:w-64" />
@@ -251,6 +268,7 @@ export function TransactionsPage() {
               <div className="inline-flex shrink-0 rounded-xl border border-neutral-200 p-0.5" role="group" aria-label="Sort order">
                 <button type="button" onClick={() => setSortDir('desc')} aria-pressed={sortDir === 'desc'} title="Newest first" className={`grid min-h-9 min-w-9 place-items-center rounded-lg transition ${sortDir === 'desc' ? 'bg-emerald-50 text-emerald-700' : 'text-neutral-400 hover:text-neutral-700'}`}><SortDescIcon /></button>
                 <button type="button" onClick={() => setSortDir('asc')} aria-pressed={sortDir === 'asc'} title="Oldest first" className={`grid min-h-9 min-w-9 place-items-center rounded-lg transition ${sortDir === 'asc' ? 'bg-emerald-50 text-emerald-700' : 'text-neutral-400 hover:text-neutral-700'}`}><SortAscIcon /></button>
+              </div>
               </div>
             </div>
           </div>

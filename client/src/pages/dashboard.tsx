@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api';
@@ -6,6 +6,8 @@ import type { AccountDTO, BudgetStatusDTO, CategoryDTO, DashboardSummaryDTO, Tra
 import { formatMoney } from '@/lib/format';
 import { CategorySummary } from '@/components/category-summary';
 import { BudgetSummary } from '@/components/budget-summary';
+import { SpendingOverview } from '@/components/spending-overview';
+import { IncomeExpenseChart } from '@/components/income-expense-chart';
 import { useAuth } from '@/auth/auth-context';
 
 export function DashboardPage() {
@@ -63,70 +65,82 @@ export function DashboardPage() {
 
   const currency = summary.currency;
   const currentYear = new Date().getUTCFullYear();
+  const overviewLabel = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const net = period === 'month' ? summary.netThisMonth : summary.yearToDate.net;
-  const chartMax = Math.max(1, ...summary.monthly.flatMap((item) => [Number(item.income), Number(item.expense)]));
+
+  // Month-over-month deltas for the stat cards. `monthly` runs Jan→present, so the
+  // last two entries are this month and last month; there is no delta in January.
+  const curMonth = summary.monthly[summary.monthly.length - 1];
+  const prevMonth = summary.monthly.length > 1 ? summary.monthly[summary.monthly.length - 2] : undefined;
+  const pctChange = (current?: string, previous?: string): number | null => {
+    if (current === undefined || previous === undefined) return null;
+    const prev = Number(previous);
+    if (prev === 0) return null;
+    return ((Number(current) - prev) / Math.abs(prev)) * 100;
+  };
+  // Net kept as a share of income; negative (spent more than earned) shows as 0%.
+  const savingsRateOf = (income: string, netAmount: string): number => {
+    const inc = Number(income);
+    return inc > 0 ? Math.max(0, Math.round((Number(netAmount) / inc) * 100)) : 0;
+  };
+  const savingsRate = period === 'month'
+    ? savingsRateOf(summary.incomeThisMonth, summary.netThisMonth)
+    : savingsRateOf(summary.yearToDate.income, summary.yearToDate.net);
 
   return (
     <div className="min-w-0 space-y-6 pb-10 sm:space-y-10">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight text-neutral-900 sm:text-3xl">Hi {firstName}</h1>
-        <Link to="/transactions?add=1" className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-md sm:px-5 sm:py-3"><span className="text-lg leading-none">+</span>Add transaction</Link>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900 sm:text-3xl">Hi {firstName}! <span aria-hidden="true">👋</span></h1>
+          <p className="mt-1 text-sm text-neutral-500">Here's your financial overview for {overviewLabel}.</p>
+        </div>
+        <Link to="/transactions?add=1" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-md sm:px-5 sm:py-3"><span className="text-lg leading-none">+</span>Add transaction</Link>
       </div>
 
-      <section className="rounded-2xl border border-neutral-200/80 bg-white p-2 shadow-sm sm:flex sm:items-center sm:justify-between sm:p-3">
-        <div className="hidden px-2 sm:block"><p className="text-sm font-semibold text-neutral-800">Summary period</p><p className="mt-0.5 text-xs text-neutral-400">View this month or the current year.</p></div>
-        <div className="grid w-full grid-cols-2 rounded-xl bg-neutral-100 p-1 sm:w-auto" role="group" aria-label="Dashboard summary period">
-          <button type="button" onClick={() => setPeriod('month')} aria-pressed={period === 'month'} className={`min-h-10 rounded-lg px-5 text-sm font-semibold transition ${period === 'month' ? 'bg-white text-emerald-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Month</button>
-          <button type="button" onClick={() => setPeriod('year')} aria-pressed={period === 'year'} className={`min-h-10 rounded-lg px-5 text-sm font-semibold transition ${period === 'year' ? 'bg-white text-emerald-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Year</button>
+      <section className="rounded-2xl border border-neutral-200/80 bg-white p-2.5 shadow-sm sm:p-3">
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-4">
+          {accounts.length > 0 && (
+            <label className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0 text-xs font-medium text-neutral-500">Account</span>
+              <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="w-full min-w-0 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 sm:w-56"><option value="">All accounts</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select>
+            </label>
+          )}
+          <div className="grid w-full grid-cols-2 rounded-xl bg-neutral-100 p-1 sm:ml-auto sm:flex sm:w-auto" role="group" aria-label="Dashboard summary period">
+            <button type="button" onClick={() => setPeriod('month')} aria-pressed={period === 'month'} className={`min-h-10 rounded-lg px-5 text-sm font-semibold transition ${period === 'month' ? 'bg-white text-emerald-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Month</button>
+            <button type="button" onClick={() => setPeriod('year')} aria-pressed={period === 'year'} className={`min-h-10 rounded-lg px-5 text-sm font-semibold transition ${period === 'year' ? 'bg-white text-emerald-700 shadow-sm' : 'text-neutral-500 hover:text-neutral-800'}`}>Year</button>
+          </div>
+        </div>
+        {accountId && <p className="mt-2 px-0.5 text-xs text-neutral-500">Showing balances and totals for {accountName.get(accountId) ?? 'this account'} only.</p>}
+      </section>
+
+      <section className="rounded-3xl border border-neutral-200/80 bg-white p-2 shadow-sm sm:p-3">
+        <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-5">
+          <StatTile label="Total balance" value={formatMoney(summary.totalBalance, currency)} icon={<WalletIcon />}
+            footer={<span className="text-neutral-400">{accountId ? accountName.get(accountId) ?? 'This account' : 'All accounts'}</span>} />
+          <StatTile label={period === 'month' ? 'Income this month' : `Income in ${currentYear}`} value={formatMoney(period === 'month' ? summary.incomeThisMonth : summary.yearToDate.income, currency)} tone="emerald" icon={<TrendUpIcon />}
+            footer={period === 'month' ? <Delta changePct={pctChange(curMonth?.income, prevMonth?.income)} goodWhenUp sinceLabel={prevMonth?.label} /> : <span className="text-neutral-400">This year</span>} />
+          <StatTile label={period === 'month' ? 'Expenses this month' : `Expenses in ${currentYear}`} value={`-${formatMoney(period === 'month' ? summary.expenseThisMonth : summary.yearToDate.expense, currency)}`} tone="rose" icon={<TrendDownIcon />}
+            footer={period === 'month' ? <Delta changePct={pctChange(curMonth?.expense, prevMonth?.expense)} goodWhenUp={false} sinceLabel={prevMonth?.label} /> : <span className="text-neutral-400">This year</span>} />
+          <StatTile label={period === 'month' ? 'Net this month' : `Net in ${currentYear}`} value={`${Number(net) >= 0 ? '+' : ''}${formatMoney(net, currency)}`} tone={Number(net) >= 0 ? 'emerald' : 'rose'} icon={<ActivityIcon />}
+            footer={period === 'month' ? <Delta changePct={pctChange(curMonth?.net, prevMonth?.net)} goodWhenUp sinceLabel={prevMonth?.label} /> : <span className="text-neutral-400">This year</span>} />
+          <StatTile label="Savings rate" value={`${savingsRate}%`} icon={<PercentIcon />}
+            footer={period === 'month' && prevMonth ? <span className="text-neutral-400">vs {prevMonth.label}: {savingsRateOf(prevMonth.income, prevMonth.net)}%</span> : <span className="text-neutral-400">{period === 'month' ? 'This month' : 'This year'}</span>} />
         </div>
       </section>
 
-      {accounts.length > 0 && (
-        <div>
-          <label className="block text-sm font-medium text-neutral-700 sm:max-w-xs">Filter by account<select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"><option value="">All accounts</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
-          {accountId && <p className="mt-2 text-xs text-neutral-500">Showing balances and totals for {accountName.get(accountId) ?? 'this account'} only.</p>}
+      <div className="grid min-w-0 items-start gap-6 lg:grid-cols-2">
+        <SpendingOverview items={period === 'month' ? summary.categoryBreakdown : summary.yearToDateCategoryBreakdown} names={categoryName} currency={currency} periodLabel={period} />
+        <IncomeExpenseChart months={summary.monthly} currency={currency} accountId={accountId} yearLabel={currentYear} />
+      </div>
+
+      {period === 'month' ? (
+        <div className="grid min-w-0 items-start gap-6 lg:grid-cols-2">
+          <CategorySummary items={summary.categoryBreakdown} names={categoryName} budgets={budgets} currency={currency} periodLabel={period} showBudget={false} />
+          <BudgetSummary budgets={budgets} names={categoryName} currency={currency} />
         </div>
+      ) : (
+        <CategorySummary items={summary.yearToDateCategoryBreakdown} names={categoryName} budgets={budgets} currency={currency} periodLabel={period} showBudget={false} />
       )}
-
-      <section className="grid grid-cols-1 gap-0.5 rounded-3xl border border-neutral-200/80 bg-white p-2 shadow-sm sm:p-3">
-        <div className="flex items-center justify-between gap-3 rounded-2xl px-3 py-2">
-          <span className="text-sm font-medium text-neutral-600">Total balance</span>
-          <span className="shrink-0 text-sm font-semibold tabular-nums text-neutral-900">{formatMoney(summary.totalBalance, currency)}</span>
-        </div>
-        <div className="flex items-center justify-between gap-3 rounded-2xl px-3 py-2">
-          <span className="text-sm font-medium text-neutral-600">{period === 'month' ? 'Income this month' : `Income in ${currentYear}`}</span>
-          <span className="shrink-0 text-sm font-semibold tabular-nums text-emerald-600">{formatMoney(period === 'month' ? summary.incomeThisMonth : summary.yearToDate.income, currency)}</span>
-        </div>
-        <div className="flex items-center justify-between gap-3 rounded-2xl px-3 py-2">
-          <span className="text-sm font-medium text-neutral-600">{period === 'month' ? 'Expenses this month' : `Expenses in ${currentYear}`}</span>
-          <span className="shrink-0 text-sm font-semibold tabular-nums text-rose-500">{formatMoney(period === 'month' ? summary.expenseThisMonth : summary.yearToDate.expense, currency)}</span>
-        </div>
-        <Link to="/transactions" className="flex items-center justify-between gap-3 rounded-2xl px-3 py-2 transition hover:bg-neutral-50">
-          <span className="text-sm font-semibold text-neutral-800">{period === 'month' ? 'Net this month' : `Net in ${currentYear}`}</span>
-          <span className={`flex shrink-0 items-center gap-1 text-sm font-bold tabular-nums ${Number(net) >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>{Number(net) >= 0 ? '+' : ''}{formatMoney(net, currency)}<svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 text-neutral-300" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></span>
-        </Link>
-      </section>
-
-      <CategorySummary items={period === 'month' ? summary.categoryBreakdown : summary.yearToDateCategoryBreakdown} names={categoryName} budgets={budgets} currency={currency} periodLabel={period} showBudget={false} />
-
-      {period === 'month' && <BudgetSummary budgets={budgets} names={categoryName} currency={currency} />}
-
-      {period === 'year' && <section className="rounded-3xl border border-neutral-200/80 bg-gradient-to-br from-white via-white to-emerald-50/50 p-5 shadow-lg shadow-neutral-200/40 sm:p-7">
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div><p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-600">{currentYear} trend</p><h2 className="text-xl font-semibold tracking-tight">Income vs expenses</h2><p className="mt-1 text-sm text-neutral-500">January through the present month. Select any month to review its transactions.</p></div>
-          <div className="flex items-center gap-4 self-start rounded-full border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-500 shadow-sm"><Legend className="bg-emerald-500" label="Income" /><Legend className="bg-rose-400" label="Expenses" /></div>
-        </div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-          {summary.monthly.map((item) => (
-            <Link key={item.key} to={`/transactions?month=${item.key}${accountId ? `&account=${accountId}` : ''}`} className="group relative min-w-0 rounded-2xl border border-neutral-200/80 bg-white/90 p-3 shadow-sm outline-none transition duration-200 hover:-translate-y-1.5 hover:border-emerald-300 hover:shadow-xl">
-              <div className="pointer-events-none absolute left-1/2 top-0 z-20 hidden w-48 -translate-x-1/2 -translate-y-[calc(100%+10px)] rounded-xl bg-neutral-900 p-3 text-xs text-white shadow-xl sm:group-hover:block"><p className="mb-2 font-semibold">{item.label} summary</p><p className="flex justify-between"><span className="text-neutral-400">Debit</span><span className="text-emerald-300">{formatMoney(item.income, currency)}</span></p><p className="flex justify-between"><span className="text-neutral-400">Credit</span><span className="text-rose-300">{formatMoney(item.expense, currency)}</span></p><p className="mt-1 flex justify-between border-t border-neutral-700 pt-1"><span>Net income</span><span>{Number(item.net) >= 0 ? '+' : ''}{formatMoney(item.net, currency)}</span></p></div>
-              <div className="mb-3 space-y-1 text-center text-[11px] tabular-nums"><p className="truncate font-medium text-emerald-600">+{formatMoney(item.income, currency)}</p><p className="truncate font-medium text-rose-500">-{formatMoney(item.expense, currency)}</p></div>
-              <div className="flex h-28 w-full items-end justify-center gap-2 sm:h-32"><Bar heightPct={(Number(item.income) / chartMax) * 100} className="bg-emerald-500" /><Bar heightPct={(Number(item.expense) / chartMax) * 100} className="bg-rose-400" /></div>
-              <p className="mt-2 text-center text-xs font-medium text-neutral-600">{item.label}</p><p className={`mt-1 text-center text-xs font-semibold ${Number(item.net) >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>Net {Number(item.net) >= 0 ? '+' : ''}{formatMoney(item.net, currency)}</p>
-            </Link>
-          ))}
-        </div>
-      </section>}
 
       <div className="grid min-w-0 gap-6 lg:grid-cols-3">
         <section className="min-w-0 overflow-hidden rounded-3xl border border-neutral-200/80 bg-white p-5 shadow-sm transition hover:shadow-md sm:p-6 lg:col-span-2">
@@ -145,6 +159,38 @@ export function DashboardPage() {
   );
 }
 
-function Bar({ heightPct, className }: { heightPct: number; className: string }) { return <div className={`w-5 max-w-[38%] rounded-t-md shadow-sm transition-all group-hover:brightness-105 sm:w-7 ${className}`} style={{ height: `${Math.max(2, heightPct)}%` }} />; }
-function Legend({ className, label }: { className: string; label: string }) { return <span className="flex items-center gap-1.5"><span className={`h-2.5 w-2.5 rounded-full ${className}`} />{label}</span>; }
 function EmptyState({ title, to, label }: { title: string; to: string; label: string }) { return <div className="py-8 text-center"><p className="text-sm text-neutral-500">{title}</p><Link to={to} className="mt-2 inline-block text-sm font-medium text-emerald-600 hover:underline">{label}</Link></div>; }
+
+/** A tile within the single balance card, matching the transactions page: a round
+ *  icon chip beside a stacked label, value, and a small footer/delta line. */
+function StatTile({ label, value, tone = 'neutral', icon, footer }: { label: string; value: string; tone?: 'neutral' | 'emerald' | 'rose'; icon: ReactNode; footer: ReactNode }) {
+  const chip = tone === 'emerald' ? 'bg-emerald-50 text-emerald-600' : tone === 'rose' ? 'bg-rose-50 text-rose-500' : 'bg-teal-50 text-teal-600';
+  const valueColor = tone === 'emerald' ? 'text-emerald-600' : tone === 'rose' ? 'text-rose-500' : 'text-neutral-900';
+  return (
+    <div className="flex items-center gap-3 rounded-2xl px-3 py-3">
+      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full ${chip}`}>{icon}</span>
+      <div className="min-w-0">
+        <p className="truncate text-xs font-medium text-neutral-500">{label}</p>
+        <p className={`truncate text-base font-semibold tabular-nums ${valueColor}`} title={value}>{value}</p>
+        <p className="truncate text-[11px]">{footer}</p>
+      </div>
+    </div>
+  );
+}
+
+/** A month-over-month change chip. Color follows whether the movement is good for
+ *  the metric (income up = good; expense up = bad), not the direction alone. */
+function Delta({ changePct, goodWhenUp, sinceLabel }: { changePct: number | null; goodWhenUp: boolean; sinceLabel?: string }) {
+  if (changePct === null || sinceLabel === undefined) return <span className="text-neutral-400">This month</span>;
+  const up = changePct >= 0;
+  const flat = Math.abs(changePct) < 0.05;
+  const cls = flat ? 'text-neutral-400' : up === goodWhenUp ? 'text-emerald-600' : 'text-rose-500';
+  return <span><span className={`font-semibold ${cls}`}>{up ? '↑' : '↓'}{Math.abs(changePct).toFixed(1)}%</span> <span className="text-neutral-400">vs {sinceLabel}</span></span>;
+}
+
+const ICON_PROPS = { viewBox: '0 0 24 24', className: 'h-4 w-4', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true } as const;
+function WalletIcon() { return <svg {...ICON_PROPS}><path d="M4 7.5A1.5 1.5 0 0 1 5.5 6H16" /><path d="M4 7.5V16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H6.2A2.2 2.2 0 0 1 4 7.8" /><circle cx="16.5" cy="13" r="1.1" fill="currentColor" stroke="none" /></svg>; }
+function TrendUpIcon() { return <svg {...ICON_PROPS}><path d="M4 15l5-5 3 3 5-6" /><path d="M14 7h4v4" /></svg>; }
+function TrendDownIcon() { return <svg {...ICON_PROPS}><path d="M4 9l5 5 3-3 5 6" /><path d="M14 17h4v-4" /></svg>; }
+function ActivityIcon() { return <svg {...ICON_PROPS}><path d="M3 12h4l2.5-7 4 14 2.5-7H21" /></svg>; }
+function PercentIcon() { return <svg {...ICON_PROPS}><path d="M18 6 6 18" /><circle cx="7.5" cy="7.5" r="2.2" /><circle cx="16.5" cy="16.5" r="2.2" /></svg>; }

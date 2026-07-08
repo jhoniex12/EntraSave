@@ -112,22 +112,10 @@ export function LandingPage() {
   const { user } = useAuth();
   const signedIn = Boolean(user);
 
-  // Keep the demo overview anchored to the current month so the marketing page
-  // never shows a stale period. Figures stay illustrative (and consistent:
-  // +A$2,292 = A$3,780 income − A$1,488 expenses).
+  // Anchor the budgets showcase label to the current month so the marketing page
+  // never shows a stale period.
   const now = new Date();
   const monthYearLabel = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-  const chartData = [
-    { a: 70, b: 40 },
-    { a: 85, b: 55 },
-    { a: 60, b: 48 },
-    { a: 95, b: 62 },
-    { a: 78, b: 50 },
-    { a: 90, b: 38 },
-  ].map((d, i) => ({
-    ...d,
-    m: new Date(now.getFullYear(), now.getMonth() - (5 - i), 1).toLocaleString('en-US', { month: 'short' }),
-  }));
 
   return (
     <div className="min-h-screen bg-white text-neutral-900">
@@ -161,70 +149,58 @@ export function LandingPage() {
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="pointer-events-none absolute inset-x-0 -top-40 h-[28rem] bg-gradient-to-b from-emerald-100/70 via-white to-white blur-2xl dark:from-emerald-950/30" aria-hidden="true" />
-        <div className="relative mx-auto max-w-6xl px-6 pb-20 pt-20 text-center md:pt-28">
-          <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-semibold tracking-tight text-neutral-900 sm:text-5xl md:text-6xl">
-            Save Smarter.
-            <span className="text-emerald-600"> Live Better.</span>
-          </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-neutral-600">
-            EntraSave is a private, secure tracker for your accounts, budgets and goals.
-            See exactly where your money goes — without spreadsheets.
-          </p>
-          <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            {signedIn ? (
-              <Link to="/dashboard" className="w-full rounded-lg bg-emerald-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-md sm:w-auto">
-                Go to your dashboard
-              </Link>
-            ) : (
-              <>
-                <Link to="/sign-up" className="w-full rounded-lg bg-emerald-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-md sm:w-auto">
-                  Start tracking — free
-                </Link>
-                <a href="#how" className="w-full rounded-lg border border-neutral-300 px-6 py-3 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50 sm:w-auto">
-                  See how it works
-                </a>
-              </>
-            )}
-          </div>
-          <p className="mt-4 text-xs text-neutral-400">No credit card required.</p>
+        <div className="relative mx-auto max-w-6xl px-6 pb-20 pt-16 md:pt-24">
+          <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-10">
+            {/* Left: copy */}
+            <div className="text-center lg:text-left">
+              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-xs font-semibold text-emerald-700">
+                <span aria-hidden="true">✦</span> Take control of your finances
+              </span>
+              <h1 className="mx-auto mt-6 max-w-xl text-4xl font-semibold tracking-tight text-neutral-900 sm:text-5xl md:text-6xl lg:mx-0">
+                Save Smarter.
+                <span className="text-emerald-600"> Live Better.</span>
+              </h1>
+              <p className="mx-auto mt-6 max-w-xl text-lg text-neutral-600 lg:mx-0">
+                EntraSave is a private, secure tracker for your accounts, budgets and goals.
+                See exactly where your money goes — without spreadsheets.
+              </p>
+              <div className="mt-9 flex flex-col items-stretch justify-center gap-3 sm:flex-row lg:justify-start">
+                {signedIn ? (
+                  <Link to="/dashboard" className="w-full rounded-lg bg-emerald-600 px-6 py-3 text-center text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-md sm:w-auto">
+                    Go to your dashboard
+                  </Link>
+                ) : (
+                  <>
+                    <Link to="/sign-up" className="w-full rounded-lg bg-emerald-600 px-6 py-3 text-center text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-md sm:w-auto">
+                      Start tracking — free
+                    </Link>
+                    <a href="#how" className="w-full rounded-lg border border-neutral-300 px-6 py-3 text-center text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50 sm:w-auto">
+                      See how it works
+                    </a>
+                  </>
+                )}
+              </div>
+              <p className="mt-4 text-xs text-neutral-400">No credit card required.</p>
+            </div>
 
-          {/* Hero preview card */}
-          <div className="mx-auto mt-16 max-w-4xl">
-            <div className="rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl shadow-neutral-200/60">
-              <div className="rounded-xl bg-neutral-50 p-5 sm:p-6">
-                <div className="mb-4 flex items-center justify-between">
-                  <p className="text-sm font-semibold text-neutral-800">{monthYearLabel} overview</p>
-                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">+ A$2,292 this month</span>
+            {/* Right: a real screenshot of the EntraSave dashboard */}
+            <div className="relative mt-2 lg:mt-0">
+              <div className="pointer-events-none absolute -inset-x-6 -top-8 -z-10 h-full rounded-[2.5rem] bg-gradient-to-tr from-emerald-200/50 via-emerald-50/20 to-transparent blur-3xl" aria-hidden="true" />
+              <div className="overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-2xl shadow-neutral-400/20 ring-1 ring-black/5">
+                <div className="flex items-center gap-2 border-b border-neutral-200/80 bg-neutral-50 px-4 py-3">
+                  <span className="h-3 w-3 rounded-full bg-rose-400" aria-hidden="true" />
+                  <span className="h-3 w-3 rounded-full bg-amber-400" aria-hidden="true" />
+                  <span className="h-3 w-3 rounded-full bg-emerald-400" aria-hidden="true" />
+                  <span className="ml-3 hidden rounded-md bg-white px-3 py-1 text-xs font-medium text-neutral-400 ring-1 ring-neutral-200 sm:block">app.entrasave.com/dashboard</span>
                 </div>
-                <div className="grid gap-4 sm:grid-cols-3">
-                  {[
-                    { label: 'Current balance', value: 'A$26,824', tone: 'text-neutral-900' },
-                    { label: 'Income', value: 'A$3,780', tone: 'text-emerald-600' },
-                    { label: 'Expenses', value: 'A$1,488', tone: 'text-rose-500' },
-                  ].map((stat) => (
-                    <div key={stat.label} className="rounded-lg border border-neutral-200 bg-white p-4 text-left">
-                      <p className="text-xs text-neutral-500">{stat.label}</p>
-                      <p className={`mt-1 text-2xl font-semibold tabular-nums ${stat.tone}`}>{stat.value}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-4">
-                  <div className="mb-3 flex items-center gap-4 text-xs text-neutral-500">
-                    <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" />Income</span>
-                    <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-400" />Expenses</span>
-                  </div>
-                  <div className="flex items-end gap-3">
-                    {chartData.map((d) => (
-                      <div key={d.m} className="flex flex-1 flex-col items-center gap-2">
-                        <div className="flex h-28 w-full items-end justify-center gap-1">
-                          <div className="w-2.5 rounded-t bg-emerald-500 sm:w-3" style={{ height: `${d.a}%` }} />
-                          <div className="w-2.5 rounded-t bg-rose-400 sm:w-3" style={{ height: `${d.b}%` }} />
-                        </div>
-                        <span className="text-[11px] text-neutral-400">{d.m}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <img
+                  src="/background.png"
+                  alt="The EntraSave dashboard: total balance, income, expenses and savings rate, a spending-overview donut chart and a monthly income-vs-expense chart"
+                  width={1049}
+                  height={861}
+                  loading="eager"
+                  className="block w-full"
+                />
               </div>
             </div>
           </div>
