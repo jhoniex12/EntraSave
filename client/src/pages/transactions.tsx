@@ -169,8 +169,11 @@ export function TransactionsPage() {
           return parts.some((p) => p && p.toLowerCase().includes(q));
         })
       : rows;
-    const ordered = [...matched].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
-    return sortDir === 'desc' ? ordered.reverse() : ordered;
+    return [...matched].sort((a, b) => {
+      const timeDifference = Date.parse(a.occurredAt) - Date.parse(b.occurredAt);
+      const chronologicalOrder = timeDifference || a.id.localeCompare(b.id);
+      return sortDir === 'asc' ? chronologicalOrder : -chronologicalOrder;
+    });
   }, [data, search, sortDir, categoryName, accountName]);
 
   return (

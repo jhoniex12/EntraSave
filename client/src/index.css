@@ -15,6 +15,15 @@ body {
   overflow-x: hidden;
 }
 
+/* iOS Safari zooms the page when a focused form control renders below 16px. */
+@supports (-webkit-touch-callout: none) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 .mobile-main {
   padding-bottom: calc(6rem + env(safe-area-inset-bottom));
 }
