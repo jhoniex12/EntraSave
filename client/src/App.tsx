@@ -13,6 +13,7 @@ import { SettingsCategoriesPage } from '@/pages/settings-categories';
 import { SettingsBudgetPage } from '@/pages/settings-budget';
 import { ManageAccountPage } from '@/pages/manage-account';
 import { TransactionsPage } from '@/pages/transactions';
+import { BudgetsPage } from '@/pages/budgets';
 import { PrivacyPage } from '@/pages/privacy';
 import { TermsPage } from '@/pages/terms';
 import { CookiesPage } from '@/pages/cookies';
@@ -50,6 +51,7 @@ export function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/accounts" element={<AccountsPage />} />
         <Route path="/transactions" element={<TransactionsPage />} />
+        <Route path="/budgets" element={<BudgetsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/currency" element={<SettingsCurrencyPage />} />
         <Route path="/settings/appearance" element={<SettingsAppearancePage />} />

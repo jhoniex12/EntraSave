@@ -176,6 +176,19 @@ export function TransactionsPage() {
     });
   }, [data, search, sortDir, categoryName, accountName]);
 
+  // Amounts arrive as decimal strings. Keep the list total in fixed-scale
+  // integer units so searching never introduces floating-point money errors.
+  // Each currency remains separate because the app does not perform FX conversion.
+  const visibleTotals = useMemo(() => {
+    const totals = new Map<string, bigint>();
+    for (const transaction of visibleItems) {
+      const isOutflow = transaction.type === 'EXPENSE' || transaction.type === 'TRANSFER_OUT';
+      const signedAmount = moneyToScaledInteger(transaction.amount) * (isOutflow ? -1n : 1n);
+      totals.set(transaction.currency, (totals.get(transaction.currency) ?? 0n) + signedAmount);
+    }
+    return Array.from(totals, ([currency, amount]) => ({ currency, amount: scaledIntegerToMoney(amount) }));
+  }, [visibleItems]);
+
   return (
     <div className="space-y-8 pb-10">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><h1 className="text-2xl font-semibold tracking-tight text-neutral-900 sm:text-3xl">Transactions</h1><p className="mt-0.5 text-sm text-neutral-500">Review your balances and activity, or record something new.</p></div><button onClick={() => setAdding(true)} disabled={accounts.length === 0} className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">+ Add transaction</button></div>
@@ -260,7 +273,20 @@ export function TransactionsPage() {
         {/* Transactions list */}
         <div className="rounded-3xl border border-neutral-200/80 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-neutral-100 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="shrink-0 text-sm font-semibold text-neutral-700">{visibleItems.length} transaction{visibleItems.length === 1 ? '' : 's'}</p>
+            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+              <p className="shrink-0 text-sm font-semibold text-neutral-700">{visibleItems.length} transaction{visibleItems.length === 1 ? '' : 's'}</p>
+              {visibleTotals.length > 0 && (
+                <p className="text-sm text-neutral-500">
+                  <span>{search.trim() ? 'Searched total' : 'List total'}: </span>
+                  {visibleTotals.map(({ currency: totalCurrency, amount }, index) => (
+                    <span key={totalCurrency} className={`font-semibold tabular-nums ${amount.startsWith('-') ? 'text-rose-500' : 'text-emerald-600'}`}>
+                      {index > 0 && <span className="px-1.5 text-neutral-300">·</span>}
+                      {amount.startsWith('-') ? '-' : '+'}{formatMoney(amount.startsWith('-') ? amount.slice(1) : amount, totalCurrency)}
+                    </span>
+                  ))}
+                </p>
+              )}
+            </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} aria-label="Filter by category" className="min-h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm text-neutral-700 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 sm:w-44"><option value="">All categories</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
               <div className="flex items-center gap-2">
@@ -717,4 +743,22 @@ function parseMonth(value: string | null, fallback: Date): { year: number; month
   const month = Number(match[2]) - 1;
   if (year < 2000 || year > 2100 || month < 0 || month > 11) return { year: fallback.getFullYear(), month: fallback.getMonth() };
   return { year, month };
+}
+
+const MONEY_SCALE = 10_000n;
+
+function moneyToScaledInteger(value: string): bigint {
+  const match = /^(\d+)(?:\.(\d{1,4}))?$/.exec(value);
+  if (!match) return 0n;
+  const whole = match[1] ?? '0';
+  const fraction = (match[2] ?? '').padEnd(4, '0');
+  return BigInt(whole) * MONEY_SCALE + BigInt(fraction);
+}
+
+function scaledIntegerToMoney(value: bigint): string {
+  const negative = value < 0n;
+  const absolute = negative ? -value : value;
+  const whole = absolute / MONEY_SCALE;
+  const fraction = (absolute % MONEY_SCALE).toString().padStart(4, '0');
+  return `${negative ? '-' : ''}${whole.toString()}.${fraction}`;
 }

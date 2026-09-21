@@ -33,6 +33,7 @@ export const RATE_LIMITS = {
   'balance.set': { limit: 30, windowMs: 60_000 },
   'budget.set': { limit: 30, windowMs: 60_000 },
   'budget.delete': { limit: 20, windowMs: 60_000 },
+  'budget.read': { limit: 120, windowMs: 60_000 },
   'auth.signin': { limit: 10, windowMs: 15 * 60_000 },
   'auth.signup': { limit: 5, windowMs: 60 * 60_000 },
   'auth.oauth': { limit: 20, windowMs: 15 * 60_000 },

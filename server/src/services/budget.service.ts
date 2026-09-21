@@ -3,7 +3,7 @@ import { ValidationError } from '@/utils/app-error';
 import { categoryService } from '@/services/category.service';
 import { budgetRepository } from '@/repositories/budget.prisma';
 import type { BudgetRepository } from '@/repositories/budget.repository';
-import { toBudgetDTO, type BudgetDTO, type BudgetStatusDTO } from '@/dto/budget.dto';
+import { toBudgetDTO, type BudgetDTO, type BudgetStatusDTO, type BudgetYearStatusDTO } from '@/dto/budget.dto';
 import type { SetBudgetInput } from '@/schemas/budget.schema';
 
 export class BudgetService {
@@ -36,25 +36,51 @@ export class BudgetService {
     const from = new Date(Date.UTC(year, month, 1));
     const to = new Date(Date.UTC(year, month + 1, 1));
     const rows = await this.repo.listWithSpending(ctx.userId, from, to);
-    return rows.map(({ budget, spentAmount }) => {
-      const budgetAmount = budget.amount.toString();
-      const budgetUnits = moneyUnits(budgetAmount);
-      const spentUnits = moneyUnits(spentAmount);
-      const usageBasisPoints = budgetUnits === 0n ? 0n : (spentUnits * 10_000n) / budgetUnits;
-      return {
-        categoryId: budget.categoryId,
-        budgetAmount,
-        spentAmount,
-        usagePercent: Number(usageBasisPoints) / 100,
-        status: spentUnits > budgetUnits ? 'OVER' : usageBasisPoints >= 8_000n ? 'NEAR' : 'SAFE',
-      };
-    });
+    return rows.map(({ budget, spentAmount }) => toBudgetStatus(budget.categoryId, budget.amount.toString(), spentAmount));
   }
+
+  async getYearStatus(ctx: AuthContext, year: number): Promise<BudgetYearStatusDTO> {
+    const from = new Date(Date.UTC(year, 0, 1));
+    const to = new Date(Date.UTC(year + 1, 0, 1));
+    const { budgets, spending } = await this.repo.listYearWithSpending(ctx.userId, from, to);
+    const spentByMonth = Array.from({ length: 12 }, () => new Map<string, bigint>());
+    for (const transaction of spending) {
+      const month = transaction.occurredAt.getUTCMonth();
+      const totals = spentByMonth[month];
+      if (!totals) continue;
+      totals.set(transaction.categoryId, (totals.get(transaction.categoryId) ?? 0n) + moneyUnits(transaction.amount));
+    }
+    return {
+      year,
+      months: spentByMonth.map((totals) => budgets.map((budget) =>
+        toBudgetStatus(budget.categoryId, budget.amount.toString(), moneyString(totals.get(budget.categoryId) ?? 0n)),
+      )),
+    };
+  }
+}
+
+function toBudgetStatus(categoryId: string, budgetAmount: string, spentAmount: string): BudgetStatusDTO {
+  const budgetUnits = moneyUnits(budgetAmount);
+  const spentUnits = moneyUnits(spentAmount);
+  const usageBasisPoints = budgetUnits === 0n ? 0n : (spentUnits * 10_000n) / budgetUnits;
+  return {
+    categoryId,
+    budgetAmount,
+    spentAmount,
+    usagePercent: Number(usageBasisPoints) / 100,
+    status: spentUnits > budgetUnits ? 'OVER' : usageBasisPoints >= 8_000n ? 'NEAR' : 'SAFE',
+  };
 }
 
 function moneyUnits(value: string): bigint {
   const [whole = '0', fraction = ''] = value.split('.');
   return BigInt(whole) * 10_000n + BigInt(fraction.padEnd(4, '0').slice(0, 4) || '0');
+}
+
+function moneyString(value: bigint): string {
+  const whole = value / 10_000n;
+  const fraction = (value % 10_000n).toString().padStart(4, '0');
+  return `${whole.toString()}.${fraction}`;
 }
 
 export const budgetService = new BudgetService(budgetRepository);

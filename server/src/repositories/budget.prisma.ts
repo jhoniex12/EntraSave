@@ -1,6 +1,6 @@
 import { Prisma, type Budget } from '@prisma/client';
 import { prisma } from '@/config/prisma';
-import type { BudgetRepository, BudgetSpendingRow } from '@/repositories/budget.repository';
+import type { BudgetRepository, BudgetSpendingRow, BudgetYearSpending } from '@/repositories/budget.repository';
 
 class PrismaBudgetRepository implements BudgetRepository {
   async listForUser(userId: string): Promise<Budget[]> {
@@ -31,6 +31,31 @@ class PrismaBudgetRepository implements BudgetRepository {
       budget,
       spentAmount: (spentByCategory.get(budget.categoryId) ?? new Prisma.Decimal(0)).toString(),
     }));
+  }
+
+  async listYearWithSpending(userId: string, from: Date, to: Date): Promise<BudgetYearSpending> {
+    const budgets = await this.listForUser(userId);
+    if (budgets.length === 0) return { budgets, spending: [] };
+    const spending = await prisma.transaction.findMany({
+      where: {
+        userId,
+        deletedAt: null,
+        type: 'EXPENSE',
+        categoryId: { in: budgets.map((budget) => budget.categoryId) },
+        occurredAt: { gte: from, lt: to },
+      },
+      select: { categoryId: true, occurredAt: true, amount: true },
+    });
+    return {
+      budgets,
+      spending: spending.flatMap((transaction) => transaction.categoryId
+        ? [{
+            categoryId: transaction.categoryId,
+            occurredAt: transaction.occurredAt,
+            amount: transaction.amount.toString(),
+          }]
+        : []),
+    };
   }
 
   async setMonthly(

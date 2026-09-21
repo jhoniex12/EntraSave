@@ -5,9 +5,15 @@ export interface BudgetSpendingRow {
   spentAmount: string;
 }
 
+export interface BudgetYearSpending {
+  budgets: Budget[];
+  spending: Array<{ categoryId: string; occurredAt: Date; amount: string }>;
+}
+
 export interface BudgetRepository {
   listForUser(userId: string): Promise<Budget[]>;
   listWithSpending(userId: string, from: Date, to: Date): Promise<BudgetSpendingRow[]>;
+  listYearWithSpending(userId: string, from: Date, to: Date): Promise<BudgetYearSpending>;
   setMonthly(userId: string, categoryId: string, categoryName: string, amount: string): Promise<Budget>;
   softDelete(userId: string, categoryId: string): Promise<number>;
 }

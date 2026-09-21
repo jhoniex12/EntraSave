@@ -68,6 +68,11 @@ export interface BudgetStatusDTO {
   status: 'SAFE' | 'NEAR' | 'OVER';
 }
 
+export interface BudgetYearStatusDTO {
+  year: number;
+  months: BudgetStatusDTO[][];
+}
+
 export interface UserProfileDTO {
   displayName: string | null;
   email: string;

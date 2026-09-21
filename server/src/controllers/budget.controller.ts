@@ -5,6 +5,7 @@ import {
   SetBudgetSchema,
   DeleteBudgetSchema,
   BudgetStatusSchema,
+  BudgetYearStatusSchema,
 } from '@/schemas/budget.schema';
 
 /**
@@ -14,7 +15,7 @@ import {
 export const listBudgets = defineRoute({
   name: 'budget.list',
   permission: 'budgets.read',
-  rateLimit: 'budget.set',
+  rateLimit: 'budget.read',
   schema: z.object({}).strict(),
   handler: ({ ctx }) => budgetService.list(ctx),
   audit: false,
@@ -23,9 +24,18 @@ export const listBudgets = defineRoute({
 export const budgetStatus = defineRoute({
   name: 'budget.status',
   permission: 'budgets.read',
-  rateLimit: 'budget.set',
+  rateLimit: 'budget.read',
   schema: BudgetStatusSchema,
   handler: ({ ctx, input }) => budgetService.getMonthStatus(ctx, input.year, input.month),
+  audit: false,
+});
+
+export const budgetYearStatus = defineRoute({
+  name: 'budget.yearStatus',
+  permission: 'budgets.read',
+  rateLimit: 'budget.read',
+  schema: BudgetYearStatusSchema,
+  handler: ({ ctx, input }) => budgetService.getYearStatus(ctx, input.year),
   audit: false,
 });
 

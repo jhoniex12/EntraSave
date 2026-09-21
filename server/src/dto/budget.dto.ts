@@ -16,6 +16,12 @@ export interface BudgetStatusDTO {
   status: 'SAFE' | 'NEAR' | 'OVER';
 }
 
+export interface BudgetYearStatusDTO {
+  year: number;
+  /** Zero-based month positions: 0 = January. */
+  months: BudgetStatusDTO[][];
+}
+
 export function toBudgetDTO(budget: Budget): BudgetDTO {
   return {
     id: budget.id,

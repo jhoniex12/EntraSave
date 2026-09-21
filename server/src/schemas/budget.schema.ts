@@ -17,3 +17,8 @@ export const BudgetStatusSchema = z.object({
   month: z.number().int().min(0).max(11),
 });
 export type BudgetStatusInput = z.infer<typeof BudgetStatusSchema>;
+
+export const BudgetYearStatusSchema = z.object({
+  year: z.number().int().min(2000).max(2100),
+});
+export type BudgetYearStatusInput = z.infer<typeof BudgetYearStatusSchema>;

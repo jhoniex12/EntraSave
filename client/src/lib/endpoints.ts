@@ -4,6 +4,7 @@ import type {
   AccountSummaryDTO,
   BudgetDTO,
   BudgetStatusDTO,
+  BudgetYearStatusDTO,
   CategoryDTO,
   DashboardSummaryDTO,
   MonthResponse,
@@ -103,6 +104,7 @@ export const api = {
     list: () => post<BudgetDTO[]>('/budgets/list', {}),
     status: (input: { year: number; month: number }) =>
       post<BudgetStatusDTO[]>('/budgets/status', input),
+    yearStatus: (year: number) => post<BudgetYearStatusDTO>('/budgets/year-status', { year }),
     set: (input: { categoryId: string; amount: string }) =>
       post<BudgetDTO>('/budgets/set', input),
     remove: (categoryId: string) =>
