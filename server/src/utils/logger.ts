@@ -24,6 +24,8 @@ const REDACT_KEYS = new Set([
   'cookie',
   'accountnumber',
   'notes',
+  'ciphertext',
+  'verifier',
   'description',
 ]);
 

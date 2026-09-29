@@ -12,6 +12,7 @@ import { SettingsAppearancePage } from '@/pages/settings-appearance';
 import { SettingsCategoriesPage } from '@/pages/settings-categories';
 import { SettingsBudgetPage } from '@/pages/settings-budget';
 import { ManageAccountPage } from '@/pages/manage-account';
+import { VaultPage } from '@/pages/vault';
 import { TransactionsPage } from '@/pages/transactions';
 import { BudgetsPage } from '@/pages/budgets';
 import { PrivacyPage } from '@/pages/privacy';
@@ -58,6 +59,7 @@ export function App() {
         <Route path="/settings/categories" element={<SettingsCategoriesPage />} />
         <Route path="/settings/budget" element={<SettingsBudgetPage />} />
         <Route path="/manage-account" element={<ManageAccountPage />} />
+        <Route path="/vault" element={<VaultPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

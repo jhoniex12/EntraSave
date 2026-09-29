@@ -8,6 +8,7 @@ import { budgetRoutes } from '@/routes/budget.routes';
 import { balanceRoutes } from '@/routes/balance.routes';
 import { dashboardRoutes } from '@/routes/dashboard.routes';
 import { userRoutes } from '@/routes/user.routes';
+import { vaultRoutes } from '@/routes/vault.routes';
 
 /**
  * The single `/api` surface (docs/ARCHITECTURE.md §1, §8). Each feature mounts
@@ -28,3 +29,4 @@ apiRouter.use('/budgets', budgetRoutes);
 apiRouter.use('/balances', balanceRoutes);
 apiRouter.use('/dashboard', dashboardRoutes);
 apiRouter.use('/users', userRoutes);
+apiRouter.use('/vault', vaultRoutes);

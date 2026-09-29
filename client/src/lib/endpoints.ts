@@ -11,6 +11,9 @@ import type {
   Page,
   TransactionDTO,
   UserProfileDTO,
+  VaultItemDTO,
+  VaultKeyDTO,
+  VaultStateDTO,
 } from '@/lib/types';
 
 /**
@@ -128,5 +131,26 @@ export const api = {
       post<{ currency: string }>('/users/currency', input),
     updateProfile: (input: { displayName: string }) =>
       post<{ displayName: string }>('/users/profile/update', input),
+  },
+
+  vault: {
+    state: () => post<VaultStateDTO>('/vault/state', {}),
+    setup: (input: { kdfSalt: string; kdfIterations: number; verifierIv: string; verifier: string }) =>
+      post<VaultKeyDTO>('/vault/setup', input),
+    list: () => post<VaultItemDTO[]>('/vault/list', {}),
+    create: (input: { keyVersion: number; iv: string; ciphertext: string }) =>
+      post<VaultItemDTO>('/vault/create', input),
+    update: (input: { id: string; keyVersion: number; iv: string; ciphertext: string }) =>
+      post<VaultItemDTO>('/vault/update', input),
+    remove: (id: string) => post<{ id: string }>('/vault/delete', { id }),
+    rekey: (input: {
+      keyVersion: number;
+      kdfSalt: string;
+      kdfIterations: number;
+      verifierIv: string;
+      verifier: string;
+      items: Array<{ id: string; iv: string; ciphertext: string }>;
+    }) => post<VaultKeyDTO>('/vault/rekey', input),
+    reset: () => post<{ reset: true }>('/vault/reset', { confirmation: 'DELETE' }),
   },
 };

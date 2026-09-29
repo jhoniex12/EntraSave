@@ -85,6 +85,7 @@ Authenticated routes are nested under `AppLayout`:
 - `/transactions`
 - `/settings`
 - `/manage-account`
+- `/vault`
 
 `AppLayout` redirects signed-out users for navigation UX, renders the desktop
 header/profile menu, and renders the mobile bottom bar. This redirect is not a
@@ -147,7 +148,7 @@ Escape/backdrop close, and become scrollable bottom sheets on small screens.
 9. not-found and final error handling.
 
 The API router mounts auth/OAuth, accounts, transactions, categories, budgets,
-monthly balances, dashboard, and users.
+monthly balances, dashboard, users, and the password vault.
 
 ### Layering
 
@@ -244,6 +245,12 @@ Row ownership is enforced independently in repository predicates using
 - `MonthlyBalance`: optional user-set starting balance for a zero-based
   year/month pair.
 
+### Password vault
+
+- `VaultKey`: one row per user holding PBKDF2 salt/iterations, an AES-GCM
+  encrypted verifier, and a `keyVersion` counter.
+- `VaultItem`: one opaque AES-GCM ciphertext and IV per saved entry.
+
 Money columns use `Decimal(19,4)`. DTOs serialize money as strings. Timestamps
 are UTC. Account/category relations use `NoAction` where required to avoid SQL
 Server multiple-cascade-path conflicts.
@@ -288,6 +295,28 @@ It has two presentation modes:
 Recent activity and account balances appear in both modes. The server constructs
 trend ranges from January through the current UTC month.
 
+### Password vault
+
+The vault is reached from the profile menu (`/vault`) and is zero-knowledge.
+`client/src/lib/vault-crypto.ts` derives a non-extractable AES-256-GCM key from
+a vault master password with PBKDF2-HMAC-SHA256 (600,000 iterations) and
+encrypts each entry (name, username, password, website, notes) as one JSON
+blob with a fresh 96-bit IV. The master password and derived key never leave
+the browser, so the server cannot read, search, or recover entries.
+
+- Unlocking decrypts a stored verifier; a GCM authentication failure means a
+  wrong password. Unlock attempts are therefore not server-rate-limited; the
+  KDF cost is the brute-force control.
+- The key lives only in `VaultPage` state. Leaving the page, signing out,
+  pressing Lock, or five idle minutes discards it.
+- Changing the master password re-encrypts every entry client-side and
+  submits them to `/vault/rekey`, which atomically bumps `keyVersion`, verifies
+  the submitted ids match the stored set exactly, and replaces all ciphertext.
+  Item create/update carry `keyVersion` and are rejected when stale.
+- A forgotten master password cannot be recovered; `/vault/reset` deletes the
+  key and all entries.
+- Website links render only for `http:`/`https:` URLs.
+
 ### Preferences and profile
 
 Users can change display name, base currency, and theme. Currency selection
@@ -307,6 +336,7 @@ Important indexes include:
 - category owner/position;
 - budget owner/period and owner/category/period uniqueness;
 - monthly-balance owner/year/month uniqueness;
+- vault item owner/creation time;
 - audit actor/target/action with time.
 
 Dashboard and budget reporting use database aggregates/grouping rather than

@@ -22,6 +22,7 @@ Project guidance:
 - Near/over-budget alerts
 - Dashboard month/year summaries and current-year trend
 - Profile, currency, and theme preferences
+- Personal password vault, end-to-end encrypted in the browser
 - Responsive desktop and mobile navigation and dialogs
 
 ## Structure
@@ -64,6 +65,13 @@ For a new database:
 ```powershell
 npm run prisma:deploy --prefix server
 npm run db:seed --prefix server
+```
+
+To apply new migrations to an existing database and regenerate the Prisma
+client, stop `npm run dev` (it locks the Prisma engine on Windows) and run:
+
+```powershell
+npm run migrate
 ```
 
 ## Verification

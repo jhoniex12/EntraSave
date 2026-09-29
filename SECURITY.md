@@ -136,6 +136,21 @@ the only trust boundary, and every layer assumes the one before it failed.
 - Edge defenses (Cloudflare WAF, Bot Fight, Turnstile) front auth and high-value
   forms in production.
 
+### Password vault
+- The vault is **zero-knowledge**. Entries are encrypted in the browser with
+  AES-256-GCM under a key derived from a separate vault master password via
+  PBKDF2-HMAC-SHA256 (at least 600,000 iterations, enforced by the server
+  schema). The master password and key never reach the API.
+- The server stores only salt, iteration count, an encrypted verifier, and
+  per-entry IV/ciphertext. It validates their shape and size, scopes every
+  query by `userId`, and hard-deletes removed entries.
+- Vault ciphertext, IVs, and key material are forbidden in logs and audit
+  metadata; audit entries record ids and item counts only.
+- `keyVersion` prevents a stale tab from writing entries under a superseded key.
+- There is no recovery path. Never add server-side escrow, key storage, or
+  plaintext handling without a separate threat-modeled design.
+- Stored website URLs render as links only for `http:`/`https:`.
+
 ### File uploads (when added)
 - Validate content-type allowlist + size; random storage keys (no user filenames
   as paths); store outside webroot; serve via signed, expiring, ownership-checked
@@ -168,7 +183,7 @@ the only trust boundary, and every layer assumes the one before it failed.
 | Risk | Control (file/section) |
 |---|---|
 | A01 Broken Access Control | RBAC + ownership-in-`where`; admin audited (§2) |
-| A02 Cryptographic Failures | TLS/HSTS, SQL Server TDE, HttpOnly JWT cookies, scrypt hashes, Decimal money |
+| A02 Cryptographic Failures | TLS/HSTS, SQL Server TDE, HttpOnly JWT cookies, scrypt hashes, client-side AES-GCM vault, Decimal money |
 | A03 Injection | Prisma parameterization; Zod typing; no string SQL |
 | A04 Insecure Design | Layered `defineRoute` pipeline; deny-by-default |
 | A05 Misconfiguration | `env.ts` boot validation; hardened headers/CSP; strict CORS; least-priv service account |

@@ -8,6 +8,7 @@
     "dev": "concurrently -n api,web -c green,cyan \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
     "build": "npm run build --prefix server && npm run build --prefix client",
     "deploy": "npm run build && pm2 restart entrasave --update-env",
+    "migrate": "npm run prisma:deploy --prefix server && npm run prisma:generate --prefix server",
     "typecheck": "npm run typecheck --prefix server && npm run typecheck --prefix client",
     "lint": "npm run lint --prefix server"
   },

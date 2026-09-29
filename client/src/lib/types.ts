@@ -82,6 +82,28 @@ export interface UserProfileDTO {
   facebookLinked: boolean;
 }
 
+/** Zero-knowledge vault: only KDF parameters and ciphertext reach the client. */
+export interface VaultKeyDTO {
+  kdf: 'PBKDF2-SHA256';
+  kdfSalt: string;
+  kdfIterations: number;
+  verifierIv: string;
+  verifier: string;
+  keyVersion: number;
+}
+
+export interface VaultStateDTO {
+  key: VaultKeyDTO | null;
+}
+
+export interface VaultItemDTO {
+  id: string;
+  iv: string;
+  ciphertext: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TransactionDTO {
   id: string;
   accountId: string;

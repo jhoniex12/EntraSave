@@ -96,6 +96,7 @@ export function AppLayout() {
                       <p className="truncate text-xs text-neutral-500">{user.email}</p>
                     </div>
                     <NavLink to="/manage-account" onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50" role="menuitem">Manage account</NavLink>
+                    <NavLink to="/vault" onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50" role="menuitem">Password vault</NavLink>
                     <button
                       type="button"
                       onClick={handleSignOut}

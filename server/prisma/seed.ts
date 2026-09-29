@@ -16,6 +16,8 @@ const PERMISSIONS = [
   'settings.write',
   'budgets.read',
   'budgets.write',
+  'vault.read',
+  'vault.write',
   'admin.dashboard.read',
   'admin.users.read',
   'admin.users.write',
@@ -38,6 +40,8 @@ const ROLES: Record<string, { name: string; permissions: string[] }> = {
       'settings.write',
       'budgets.read',
       'budgets.write',
+      'vault.read',
+      'vault.write',
     ],
   },
   SUPPORT: {
