@@ -12,7 +12,7 @@ import type { VaultKeyDTO } from '@/lib/types';
  * accepted as an entry and vice versa.
  */
 export const VAULT_KDF_ITERATIONS = 600_000;
-export const MASTER_PASSWORD_MIN = 12;
+export const MASTER_PASSWORD_MIN = 10;
 export const MASTER_PASSWORD_MAX = 128;
 
 export const ENTRY_LIMITS = {
