@@ -447,11 +447,21 @@ function UnlockedVault({ stored, cryptoKey, onLock, onKeyChanged, onStale }: {
         ) : visible.length === 0 ? (
           <p className="p-5 text-sm text-neutral-500">No entries match “{query}”.</p>
         ) : (
-          <ul className="divide-y divide-neutral-100">
-            {visible.map((row) => (
-              <VaultRowItem key={row.id} row={row} onEdit={() => setEditing(row)} onDelete={() => setDeleting(row)} />
-            ))}
-          </ul>
+          <table className="w-full table-fixed text-sm">
+            <thead className="border-b border-neutral-200 bg-neutral-50 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              <tr>
+                <th scope="col" className="py-2.5 pl-4 pr-2 sm:pl-5">Name</th>
+                <th scope="col" className="hidden w-[30%] px-2 py-2.5 sm:table-cell">Username</th>
+                <th scope="col" className="w-[10.5rem] px-2 py-2.5 sm:w-[32%]">Password</th>
+                <th scope="col" className="w-12 py-2.5 pr-1 sm:w-11 sm:pr-3"><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {visible.map((row) => (
+                <VaultRowItem key={row.id} row={row} onEdit={() => setEditing(row)} onDelete={() => setDeleting(row)} />
+              ))}
+            </tbody>
+          </table>
         )}
       </section>
       <p className="text-center text-xs text-neutral-400">The vault locks automatically after 5 minutes of inactivity.</p>
@@ -460,6 +470,7 @@ function UnlockedVault({ stored, cryptoKey, onLock, onKeyChanged, onStale }: {
         <EntryDialog
           row={editing === 'new' ? null : editing}
           onClose={() => setEditing(null)}
+          onDelete={editing === 'new' ? undefined : () => { setDeleting(editing); setEditing(null); }}
           onSubmit={async (entry) => {
             const blob = await encryptEntry(cryptoKey, entry);
             if (editing === 'new') await api.vault.create({ keyVersion: stored.keyVersion, ...blob });
@@ -499,14 +510,17 @@ function VaultRowItem({ row, onEdit, onDelete }: { row: VaultRow; onEdit: () => 
   const { entry } = row;
   if (!entry) {
     return (
-      <li className="flex items-center gap-3 px-4 py-4 sm:px-5">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-rose-50 text-rose-600">!</span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-neutral-800">Unreadable entry</p>
-          <p className="text-xs text-neutral-500">This entry could not be decrypted with your key.</p>
-        </div>
-        <IconButton label="Delete unreadable entry" onClick={onDelete} danger><TrashIcon /></IconButton>
-      </li>
+      <tr>
+        <td colSpan={4} className="py-1.5 pl-4 pr-1 sm:pl-5 sm:pr-3">
+          <div className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-semibold text-rose-600">Unreadable entry</p>
+              <p className="truncate text-xs text-neutral-500">This entry could not be decrypted with your key.</p>
+            </div>
+            <IconButton label="Delete unreadable entry" onClick={onDelete} danger><TrashIcon /></IconButton>
+          </div>
+        </td>
+      </tr>
     );
   }
 
@@ -522,43 +536,47 @@ function VaultRowItem({ row, onEdit, onDelete }: { row: VaultRow; onEdit: () => 
   }
 
   const link = safeWebsiteUrl(entry.url);
-  const site = link ? new URL(link).hostname : entry.url;
+  // Clicking the username copies it; it renders in its own column from sm up
+  // and under the name below sm, so each entry stays a single row.
+  const username = (className: string) => (entry.username ? (
+    <button
+      type="button"
+      onClick={() => void copy('username', entry.username)}
+      title="Copy username"
+      className={`block max-w-full truncate text-left text-neutral-600 hover:text-emerald-700 ${className}`}
+    >
+      {copied === 'username' ? 'Copied!' : entry.username}
+    </button>
+  ) : (
+    <span className={`block text-neutral-400 ${className}`}>—</span>
+  ));
 
   return (
-    <li className="px-4 py-3 sm:px-5">
-      <div className="flex items-center gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-50 text-sm font-semibold text-emerald-700">
-          {(entry.name.trim().charAt(0) || '?').toUpperCase()}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-neutral-800">{entry.name}</p>
-          {link ? (
-            <a href={link} target="_blank" rel="noopener noreferrer" className="block truncate text-xs text-emerald-700 hover:underline">{site}</a>
-          ) : site ? (
-            <p className="truncate text-xs text-neutral-500">{site}</p>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 items-center">
-          <IconButton label={`Edit ${entry.name}`} onClick={onEdit}><EditIcon /></IconButton>
-          <IconButton label={`Delete ${entry.name}`} onClick={onDelete} danger><TrashIcon /></IconButton>
-        </div>
-      </div>
-
-      <dl className="mt-2 space-y-1 rounded-xl bg-neutral-50 px-3 py-1.5 sm:ml-[52px]">
-        <div className="flex items-center gap-2">
-          <dt className="w-[4.5rem] shrink-0 text-xs text-neutral-500">Username</dt>
-          <dd className="min-w-0 flex-1 truncate text-sm text-neutral-800">{entry.username || <span className="text-neutral-400">—</span>}</dd>
-          {entry.username && (
-            <IconButton label={`Copy username for ${entry.name}`} onClick={() => void copy('username', entry.username)}>
-              {copied === 'username' ? <CheckIcon /> : <CopyIcon />}
-            </IconButton>
+    <tr className="hover:bg-neutral-50">
+      <td className="py-1.5 pl-4 pr-2 sm:pl-5">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate font-semibold text-neutral-800">{entry.name}</span>
+          {link && (
+            <a href={link} target="_blank" rel="noopener noreferrer" aria-label={`Open website for ${entry.name}`} title="Open website" className="shrink-0 text-neutral-400 hover:text-emerald-700">
+              <ExternalIcon />
+            </a>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <dt className="w-[4.5rem] shrink-0 text-xs text-neutral-500">Password</dt>
-          <dd className={`min-w-0 flex-1 font-mono text-sm text-neutral-800 ${revealed ? 'break-all' : 'truncate'}`}>
-            {entry.password ? (revealed ? entry.password : MASK) : <span className="font-sans text-neutral-400">—</span>}
-          </dd>
+        <div className="sm:hidden">{username('text-xs')}</div>
+        {copied === 'failed' && <p className="text-xs text-rose-600">Copy blocked by your browser.</p>}
+        <span role="status" className="sr-only">
+          {copied === 'username' ? 'Username copied' : copied === 'password' ? 'Password copied' : copied === 'failed' ? 'Copy failed' : ''}
+        </span>
+      </td>
+      <td className="hidden px-2 py-1.5 sm:table-cell">{username('')}</td>
+      <td className="px-2 py-1.5">
+        <div className="flex min-w-0 items-center">
+          <span
+            title={revealed ? entry.password : undefined}
+            className={`min-w-0 flex-1 truncate font-mono ${entry.password ? 'text-neutral-800' : 'font-sans text-neutral-400'}`}
+          >
+            {entry.password ? (revealed ? entry.password : MASK) : '—'}
+          </span>
           {entry.password && (
             <>
               <IconButton label={revealed ? `Hide password for ${entry.name}` : `Show password for ${entry.name}`} onClick={() => setRevealed((v) => !v)}>
@@ -570,20 +588,20 @@ function VaultRowItem({ row, onEdit, onDelete }: { row: VaultRow; onEdit: () => 
             </>
           )}
         </div>
-      </dl>
-      <p role="status" className="sr-only">
-        {copied === 'username' ? 'Username copied' : copied === 'password' ? 'Password copied' : copied === 'failed' ? 'Copy failed' : ''}
-      </p>
-      {copied === 'failed' && <p className="mt-1 text-xs text-rose-600 sm:ml-[52px]">Copy failed. Your browser blocked clipboard access.</p>}
-    </li>
+      </td>
+      <td className="py-1.5 pr-1 sm:pr-3">
+        <IconButton label={`Edit ${entry.name}`} onClick={onEdit}><EditIcon /></IconButton>
+      </td>
+    </tr>
   );
 }
 
 // ─────────────────────────── Dialogs ───────────────────────────
 
-function EntryDialog({ row, onClose, onSubmit, onError }: {
+function EntryDialog({ row, onClose, onDelete, onSubmit, onError }: {
   row: VaultRow | null;
   onClose: () => void;
+  onDelete?: () => void;
   onSubmit: (entry: VaultEntry) => Promise<void>;
   onError: (err: unknown, fallback: string) => Promise<string>;
 }) {
@@ -654,7 +672,13 @@ function EntryDialog({ row, onClose, onSubmit, onError }: {
           <textarea name="notes" defaultValue={initial?.notes} maxLength={ENTRY_LIMITS.notes} rows={3} className={inputClass} />
         </label>
         {error && <Notice>{error}</Notice>}
-        <DialogActions onCancel={onClose} pending={pending}>
+        <DialogActions
+          onCancel={onClose}
+          pending={pending}
+          start={onDelete && (
+            <button type="button" onClick={onDelete} disabled={pending} className="min-h-11 rounded-xl px-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50">Delete</button>
+          )}
+        >
           <button disabled={pending} className="min-h-11 rounded-xl bg-emerald-600 px-5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
             {pending ? 'Saving…' : row ? 'Save changes' : 'Add entry'}
           </button>
@@ -877,9 +901,10 @@ function PrimaryButton({ pending, pendingLabel, children }: { pending: boolean; 
   );
 }
 
-function DialogActions({ onCancel, pending, children }: { onCancel: () => void; pending: boolean; children: ReactNode }) {
+function DialogActions({ onCancel, pending, start, children }: { onCancel: () => void; pending: boolean; start?: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex justify-end gap-3 border-t border-neutral-100 pt-4">
+    <div className="flex items-center justify-end gap-3 border-t border-neutral-100 pt-4">
+      {start && <div className="mr-auto">{start}</div>}
       <button type="button" onClick={onCancel} disabled={pending} className="min-h-11 rounded-xl border border-neutral-300 px-4 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">Cancel</button>
       {children}
     </div>
@@ -914,6 +939,7 @@ function LockIcon({ className = 'h-4 w-4' }: { className?: string }) { return <s
 function SearchIcon({ className }: { className?: string }) { return <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>; }
 function CopyIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a1 1 0 0 1 1-1h10" /></svg>; }
 function CheckIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4 text-emerald-600" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>; }
+function ExternalIcon() { return <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>; }
 function EditIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m4 20 4.2-1 10.9-10.9a2.1 2.1 0 0 0-3-3L5.2 16 4 20Z" /><path d="m14.5 6.5 3 3" /></svg>; }
 function TrashIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" /></svg>; }
 function EyeIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>; }
