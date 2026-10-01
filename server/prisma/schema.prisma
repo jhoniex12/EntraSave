@@ -218,21 +218,33 @@ model MonthlyBalance {
 }
 
 // ─────────────────────────── Password vault ───────────────────────────
-// Zero-knowledge: the browser derives an AES-GCM key from a vault master
-// password the server never sees. Only KDF parameters, an encrypted verifier,
-// and encrypted item blobs are stored — the server cannot read entry contents.
+// Entries are encrypted in the browser under a key derived from the user's
+// 6-digit PIN combined with a random per-user vault secret. The server checks
+// a peppered PIN verifier (with attempt lockout) before releasing the secret,
+// and stores the secret wrapped under VAULT_SECRET, so a database copy alone
+// cannot be used to guess PINs offline. See SECURITY.md "Password vault".
 
 model VaultKey {
-  userId        String   @id
-  kdfSalt       String   @db.NVarChar(64) // base64
-  kdfIterations Int
-  verifierIv    String   @db.NVarChar(32) // base64
-  verifier      String   @db.NVarChar(256) // base64 AES-GCM ciphertext
-  // Incremented on master-password change; writes carrying a stale version are
-  // rejected so no item is ever encrypted under a superseded key.
-  keyVersion    Int      @default(1)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  userId         String    @id
+  // PIN for current vaults. PASSWORD marks legacy master-password vaults,
+  // which are converted to a PIN on their next unlock.
+  scheme         String    @default("PASSWORD") @db.NVarChar(16)
+  kdfSalt        String    @db.NVarChar(64) // base64
+  kdfIterations  Int
+  // Legacy PASSWORD scheme only: client-checked AES-GCM verifier.
+  verifierIv     String?   @db.NVarChar(32)
+  verifier       String?   @db.NVarChar(256)
+  // PIN scheme: HMAC(VAULT_SECRET-derived key, PIN proof) and the per-user
+  // vault secret encrypted under a VAULT_SECRET-derived key.
+  pinVerifier    String?   @db.NVarChar(64)
+  wrappedSecret  String?   @db.NVarChar(256)
+  failedAttempts Int       @default(0)
+  lockedUntil    DateTime?
+  // Incremented on PIN change; writes carrying a stale version are rejected
+  // so no item is ever encrypted under a superseded key.
+  keyVersion     Int       @default(1)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

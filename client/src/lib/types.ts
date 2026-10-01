@@ -82,13 +82,17 @@ export interface UserProfileDTO {
   facebookLinked: boolean;
 }
 
-/** Zero-knowledge vault: only KDF parameters and ciphertext reach the client. */
+/** Password vault: KDF parameters, lock state, and ciphertext only. */
 export interface VaultKeyDTO {
+  /** PIN for current vaults; PASSWORD for legacy vaults awaiting conversion. */
+  scheme: 'PIN' | 'PASSWORD';
   kdf: 'PBKDF2-SHA256';
   kdfSalt: string;
   kdfIterations: number;
-  verifierIv: string;
-  verifier: string;
+  /** Legacy PASSWORD vaults only. */
+  verifierIv: string | null;
+  verifier: string | null;
+  lockedUntil: string | null;
   keyVersion: number;
 }
 

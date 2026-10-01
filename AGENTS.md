@@ -85,8 +85,8 @@ decisions to `authService`.
 - Ordered income/expense categories.
 - Monthly category budgets and near/over-budget alerts.
 - Base-currency preference and light/dark/system theme.
-- Zero-knowledge personal password vault (client-side encryption, master
-  password change, auto-lock, and vault reset).
+- Personal password vault: client-side encryption unlocked by a 6-digit PIN,
+  server-enforced wrong-PIN lockout, PIN change, auto-lock, and vault reset.
 - Dashboard month/year summaries, category summary, current-year trend,
   recent activity, and account balances.
 - Responsive desktop and mobile navigation and dialogs.

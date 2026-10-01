@@ -7,13 +7,14 @@ import {
   RekeyVaultSchema,
   ResetVaultSchema,
   SetupVaultSchema,
+  UnlockVaultSchema,
   UpdateVaultItemSchema,
 } from '@/schemas/vault.schema';
 
 /**
  * Password vault — controllers (docs/ARCHITECTURE.md §8). Every query is
  * owner-scoped in the repository. Audit entries record ids and outcomes only;
- * ciphertext, IVs, and key material never enter audit metadata.
+ * ciphertext, IVs, PIN proofs, and key material never enter audit metadata.
  */
 export const readVaultState = defineRoute({
   name: 'vault.state',
@@ -31,6 +32,16 @@ export const setupVault = defineRoute({
   schema: SetupVaultSchema,
   handler: ({ ctx, input }) => vaultService.setup(ctx, input),
   audit: ({ ctx }) => ({ action: 'vault.setup', resourceType: 'vault', resourceId: ctx.userId }),
+});
+
+export const unlockVault = defineRoute({
+  name: 'vault.unlock',
+  permission: 'vault.read',
+  // Per-user request cap on top of the service's wrong-PIN lockout.
+  rateLimit: 'vault.unlock',
+  schema: UnlockVaultSchema,
+  handler: ({ ctx, input }) => vaultService.unlock(ctx, input.pinProof),
+  audit: ({ ctx }) => ({ action: 'vault.unlock', resourceType: 'vault', resourceId: ctx.userId }),
 });
 
 export const listVaultItems = defineRoute({

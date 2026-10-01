@@ -22,7 +22,7 @@ Project guidance:
 - Near/over-budget alerts
 - Dashboard month/year summaries and current-year trend
 - Profile, currency, and theme preferences
-- Personal password vault, end-to-end encrypted in the browser
+- Personal password vault, encrypted in the browser and unlocked with a 6-digit PIN
 - Responsive desktop and mobile navigation and dialogs
 
 ## Structure

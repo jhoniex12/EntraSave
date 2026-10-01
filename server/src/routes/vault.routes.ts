@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   readVaultState,
   setupVault,
+  unlockVault,
   listVaultItems,
   createVaultItem,
   updateVaultItem,
@@ -15,6 +16,7 @@ export const vaultRoutes = Router();
 
 vaultRoutes.post('/state', readVaultState);
 vaultRoutes.post('/setup', setupVault);
+vaultRoutes.post('/unlock', unlockVault);
 vaultRoutes.post('/list', listVaultItems);
 vaultRoutes.post('/create', createVaultItem);
 vaultRoutes.post('/update', updateVaultItem);

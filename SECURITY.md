@@ -137,18 +137,31 @@ the only trust boundary, and every layer assumes the one before it failed.
   forms in production.
 
 ### Password vault
-- The vault is **zero-knowledge**. Entries are encrypted in the browser with
-  AES-256-GCM under a key derived from a separate vault master password via
-  PBKDF2-HMAC-SHA256 (at least 600,000 iterations, enforced by the server
-  schema). The master password and key never reach the API.
-- The server stores only salt, iteration count, an encrypted verifier, and
-  per-entry IV/ciphertext. It validates their shape and size, scopes every
-  query by `userId`, and hard-deletes removed entries.
-- Vault ciphertext, IVs, and key material are forbidden in logs and audit
-  metadata; audit entries record ids and item counts only.
+- Entries are encrypted in the browser with AES-256-GCM. The key is derived
+  from the user's 6-digit PIN (PBKDF2-HMAC-SHA256, at least 600,000
+  iterations, enforced by the server schema) combined via HKDF with a random
+  per-user vault secret. The raw PIN and the key never reach the API; the
+  browser sends only an HMAC proof of the stretched PIN.
+- A 6-digit PIN has only 10^6 values, so the design relies on the server:
+  the PIN verifier is an HMAC under a `VAULT_SECRET`-derived pepper, the vault
+  secret is AES-GCM-wrapped under a separate `VAULT_SECRET`-derived key bound
+  to the user id, and the secret is released only after a correct PIN.
+- **Trust model:** the vault is not zero-knowledge. A database copy alone
+  cannot be used to guess PINs offline, but anyone holding both the database
+  and `VAULT_SECRET` could brute-force a PIN in minutes. Keep `VAULT_SECRET`
+  out of the database, backups that include it, and source control; it must
+  differ from `JWT_SECRET` (enforced at boot).
+- Wrong PINs are limited server-side: 5 attempts, then a 15-minute lock that
+  doubles with each further failure up to 24 hours, reset only by a correct
+  PIN. Attempts are claimed before comparison so parallel guesses cannot exceed
+  the limit. `/vault/unlock` also has a per-user rate limit.
+- The server scopes every query by `userId` and hard-deletes removed entries.
+  DTOs never expose the PIN verifier, wrapped secret, or attempt counter.
+- Vault ciphertext, IVs, PIN proofs, and key material are forbidden in logs and
+  audit metadata; audit entries record ids and item counts only.
 - `keyVersion` prevents a stale tab from writing entries under a superseded key.
-- There is no recovery path. Never add server-side escrow, key storage, or
-  plaintext handling without a separate threat-modeled design.
+- There is no recovery path for a forgotten PIN; rotating `VAULT_SECRET`
+  without a re-wrap migration makes every vault unreadable.
 - Stored website URLs render as links only for `http:`/`https:`.
 
 ### File uploads (when added)
@@ -183,7 +196,7 @@ the only trust boundary, and every layer assumes the one before it failed.
 | Risk | Control (file/section) |
 |---|---|
 | A01 Broken Access Control | RBAC + ownership-in-`where`; admin audited (§2) |
-| A02 Cryptographic Failures | TLS/HSTS, SQL Server TDE, HttpOnly JWT cookies, scrypt hashes, client-side AES-GCM vault, Decimal money |
+| A02 Cryptographic Failures | TLS/HSTS, SQL Server TDE, HttpOnly JWT cookies, scrypt hashes, client-side AES-GCM vault with peppered PIN verifier, Decimal money |
 | A03 Injection | Prisma parameterization; Zod typing; no string SQL |
 | A04 Insecure Design | Layered `defineRoute` pipeline; deny-by-default |
 | A05 Misconfiguration | `env.ts` boot validation; hardened headers/CSP; strict CORS; least-priv service account |

@@ -3,8 +3,8 @@ import { prisma } from '@/config/prisma';
 import type {
   EncryptedBlob,
   VaultItemRecord,
-  VaultKeyMaterial,
   VaultKeyRecord,
+  VaultPinKeyMaterial,
   VaultRepository,
 } from '@/repositories/vault.repository';
 
@@ -14,12 +14,29 @@ import type {
  * hard-deleted: a removed secret should not linger in the database.
  */
 const KEY_SELECT = {
+  scheme: true,
   kdfSalt: true,
   kdfIterations: true,
   verifierIv: true,
   verifier: true,
+  pinVerifier: true,
+  wrappedSecret: true,
+  failedAttempts: true,
+  lockedUntil: true,
   keyVersion: true,
 } as const;
+
+/** Writing PIN material also clears legacy verifier fields and the lockout. */
+function pinKeyData(material: VaultPinKeyMaterial) {
+  return {
+    ...material,
+    scheme: 'PIN',
+    verifierIv: null,
+    verifier: null,
+    failedAttempts: 0,
+    lockedUntil: null,
+  };
+}
 
 const ITEM_SELECT = {
   id: true,
@@ -44,15 +61,35 @@ class PrismaVaultRepository implements VaultRepository {
     return prisma.vaultKey.findUnique({ where: { userId }, select: KEY_SELECT });
   }
 
-  async createKey(userId: string, material: VaultKeyMaterial): Promise<VaultKeyRecord> {
+  async createKey(userId: string, material: VaultPinKeyMaterial): Promise<VaultKeyRecord> {
     try {
-      return await prisma.vaultKey.create({ data: { userId, ...material }, select: KEY_SELECT });
+      return await prisma.vaultKey.create({ data: { userId, ...pinKeyData(material) }, select: KEY_SELECT });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new Error('VAULT_EXISTS');
       }
       throw err;
     }
+  }
+
+  async claimUnlockAttempt(
+    userId: string,
+    expectedFailures: number,
+    failures: number,
+    lockedUntil: Date | null,
+  ): Promise<boolean> {
+    const result = await prisma.vaultKey.updateMany({
+      where: { userId, failedAttempts: expectedFailures },
+      data: { failedAttempts: failures, lockedUntil },
+    });
+    return result.count === 1;
+  }
+
+  async clearUnlockAttempts(userId: string): Promise<void> {
+    await prisma.vaultKey.updateMany({
+      where: { userId },
+      data: { failedAttempts: 0, lockedUntil: null },
+    });
   }
 
   async listItems(userId: string): Promise<VaultItemRecord[]> {
@@ -97,13 +134,13 @@ class PrismaVaultRepository implements VaultRepository {
   async rekey(
     userId: string,
     keyVersion: number,
-    material: VaultKeyMaterial,
+    material: VaultPinKeyMaterial,
     items: Array<EncryptedBlob & { id: string }>,
   ): Promise<VaultKeyRecord> {
     return prisma.$transaction(async (tx) => {
       const bumped = await tx.vaultKey.updateMany({
         where: { userId, keyVersion },
-        data: { ...material, keyVersion: { increment: 1 } },
+        data: { ...pinKeyData(material), keyVersion: { increment: 1 } },
       });
       if (bumped.count === 0) throw new Error('VAULT_STALE_KEY');
 

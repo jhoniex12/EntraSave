@@ -247,13 +247,11 @@ Row ownership is enforced independently in repository predicates using
 
 ### Password vault
 
-- `VaultKey`: one row per user holding PBKDF2 salt/iterations, an AES-GCM
-  encrypted verifier, and a `keyVersion` counter.
+- `VaultKey`: one row per user holding the scheme (`PIN`, or legacy
+  `PASSWORD`), PBKDF2 salt/iterations, the peppered PIN verifier, the wrapped
+  vault secret, the wrong-PIN counter and lock time, and a `keyVersion`
+  counter. Legacy rows also hold a client-checked AES-GCM verifier.
 - `VaultItem`: one opaque AES-GCM ciphertext and IV per saved entry.
-
-Money columns use `Decimal(19,4)`. DTOs serialize money as strings. Timestamps
-are UTC. Account/category relations use `NoAction` where required to avoid SQL
-Server multiple-cascade-path conflicts.
 
 ## 7. Feature behavior
 
@@ -297,24 +295,35 @@ trend ranges from January through the current UTC month.
 
 ### Password vault
 
-The vault is reached from the profile menu (`/vault`) and is zero-knowledge.
-`client/src/lib/vault-crypto.ts` derives a non-extractable AES-256-GCM key from
-a vault master password with PBKDF2-HMAC-SHA256 (600,000 iterations) and
-encrypts each entry (name, username, password, website, notes) as one JSON
-blob with a fresh 96-bit IV. The master password and derived key never leave
-the browser, so the server cannot read, search, or recover entries.
+The vault is reached from the profile menu (`/vault`) and unlocks with a
+6-digit PIN. `client/src/lib/vault-crypto.ts` stretches the PIN with
+PBKDF2-HMAC-SHA256 (600,000 iterations), sends only an HMAC "PIN proof" to
+`/vault/unlock`, and combines the stretched PIN with the per-user vault secret
+the server returns (HKDF-SHA256) into a non-extractable AES-256-GCM key. Each
+entry (name, username, password, website, notes) is one JSON blob encrypted
+with a fresh 96-bit IV. The PIN and key never leave the browser.
 
-- Unlocking decrypts a stored verifier; a GCM authentication failure means a
-  wrong password. Unlock attempts are therefore not server-rate-limited; the
-  KDF cost is the brute-force control.
+- The server stores the PIN verifier as an HMAC under a key derived from
+  `VAULT_SECRET` and the vault secret AES-GCM-wrapped under another, bound to
+  the user id (`server/src/utils/vault-secret.ts`). A database copy alone
+  cannot be used to test PINs or decrypt entries.
+- Five wrong PINs lock the vault for 15 minutes; each further wrong PIN
+  doubles the lock, up to 24 hours. Only a correct PIN resets the counter.
+  Attempts are claimed (and the lock set) before comparison with an
+  optimistic counter check, so parallel guesses cannot exceed the limit.
 - The key lives only in `VaultPage` state. Leaving the page, signing out,
   pressing Lock, or five idle minutes discards it.
-- Changing the master password re-encrypts every entry client-side and
-  submits them to `/vault/rekey`, which atomically bumps `keyVersion`, verifies
-  the submitted ids match the stored set exactly, and replaces all ciphertext.
-  Item create/update carry `keyVersion` and are rejected when stale.
-- A forgotten master password cannot be recovered; `/vault/reset` deletes the
-  key and all entries.
+- Entries show the username in clear; passwords are masked until the user
+  toggles show/hide.
+- Changing the PIN requires the current PIN proof (counted toward the
+  lockout), re-encrypts every entry client-side, and submits them to
+  `/vault/rekey`, which atomically bumps `keyVersion`, verifies the submitted
+  ids match the stored set exactly, and replaces all ciphertext. Item
+  create/update carry `keyVersion` and are rejected when stale.
+- Legacy master-password vaults unlock in the browser once more and are then
+  converted to a PIN through the same rekey path.
+- A forgotten PIN cannot be recovered; `/vault/reset` deletes the key and all
+  entries. Losing or changing `VAULT_SECRET` makes every vault unreadable.
 - Website links render only for `http:`/`https:` URLs.
 
 ### Preferences and profile

@@ -135,8 +135,9 @@ export const api = {
 
   vault: {
     state: () => post<VaultStateDTO>('/vault/state', {}),
-    setup: (input: { kdfSalt: string; kdfIterations: number; verifierIv: string; verifier: string }) =>
+    setup: (input: { kdfSalt: string; kdfIterations: number; pinProof: string; secret: string }) =>
       post<VaultKeyDTO>('/vault/setup', input),
+    unlock: (pinProof: string) => post<{ secret: string }>('/vault/unlock', { pinProof }),
     list: () => post<VaultItemDTO[]>('/vault/list', {}),
     create: (input: { keyVersion: number; iv: string; ciphertext: string }) =>
       post<VaultItemDTO>('/vault/create', input),
@@ -147,8 +148,9 @@ export const api = {
       keyVersion: number;
       kdfSalt: string;
       kdfIterations: number;
-      verifierIv: string;
-      verifier: string;
+      pinProof: string;
+      secret: string;
+      currentPinProof?: string;
       items: Array<{ id: string; iv: string; ciphertext: string }>;
     }) => post<VaultKeyDTO>('/vault/rekey', input),
     reset: () => post<{ reset: true }>('/vault/reset', { confirmation: 'DELETE' }),

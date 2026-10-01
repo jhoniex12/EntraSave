@@ -29,6 +29,13 @@ const EnvSchema = z.object({
   JWT_AUDIENCE: z.string().min(1).default('entrasave-web'),
   SESSION_TTL_SECONDS: z.coerce.number().int().min(300).max(86_400).default(28_800),
 
+  // Password-vault server secret (at least 32 random bytes, distinct from
+  // JWT_SECRET). It peppers PIN verifiers and wraps per-user vault secrets, so
+  // a database copy alone cannot be used to guess PINs. Optional so the rest of
+  // the app still boots; the vault refuses to operate until it is set.
+  // Changing it makes every existing vault permanently unreadable.
+  VAULT_SECRET: z.string().min(32).optional(),
+
   // Direct OAuth credentials. A provider is enabled only when both values exist.
   GOOGLE_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
@@ -58,6 +65,13 @@ const EnvSchema = z.object({
         message: `${left} and ${right} must be configured together`,
       });
     }
+  }
+  if (val.VAULT_SECRET && val.VAULT_SECRET === val.JWT_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['VAULT_SECRET'],
+      message: 'VAULT_SECRET must not reuse JWT_SECRET',
+    });
   }
   if (val.FACEBOOK_APP_ID && !val.FACEBOOK_GRAPH_VERSION) {
     ctx.addIssue({

@@ -5,25 +5,29 @@ import type { VaultItemDTO, VaultKeyDTO } from '@/lib/types';
 import { Modal } from '@/components/modal';
 import {
   ENTRY_LIMITS,
-  MASTER_PASSWORD_MAX,
-  MASTER_PASSWORD_MIN,
-  createVaultKey,
+  LEGACY_PASSWORD_MAX,
+  PIN_LENGTH,
+  createPinKey,
   decryptEntry,
   encryptEntry,
   generatePassword,
+  isValidPin,
   isVaultCryptoAvailable,
-  unlockVaultKey,
+  preparePin,
+  unlockLegacyVaultKey,
   type VaultEntry,
 } from '@/lib/vault-crypto';
 
 /**
  * Personal password vault. Entries are encrypted and decrypted in the browser
- * (see lib/vault-crypto.ts); the API only ever stores ciphertext. The derived
- * key lives in this page's state, so leaving the page, signing out, pressing
- * Lock, or AUTO_LOCK_MS of inactivity discards it.
+ * (see lib/vault-crypto.ts) with a key derived from the user's 6-digit PIN and
+ * a vault secret the server releases only after a correct PIN. The key lives in
+ * this page's state, so leaving the page, signing out, pressing Lock, or
+ * AUTO_LOCK_MS of inactivity discards it.
  */
 const AUTO_LOCK_MS = 5 * 60_000;
 const COPIED_FEEDBACK_MS = 1_500;
+const MASK = '••••••••';
 
 type Phase =
   | { kind: 'loading' }
@@ -31,12 +35,20 @@ type Phase =
   | { kind: 'error'; message: string }
   | { kind: 'setup' }
   | { kind: 'locked'; stored: VaultKeyDTO }
+  // Legacy master-password vault, unlocked, that must switch to a PIN.
+  | { kind: 'convert'; stored: VaultKeyDTO; key: CryptoKey }
   | { kind: 'unlocked'; stored: VaultKeyDTO; key: CryptoKey };
 
 interface VaultRow {
   id: string;
   /** null when the ciphertext failed authentication and cannot be shown. */
   entry: VaultEntry | null;
+}
+
+class UnreadableEntriesError extends Error {
+  constructor() {
+    super('Delete unreadable entries before changing your PIN.');
+  }
 }
 
 export function VaultPage() {
@@ -58,8 +70,12 @@ export function VaultPage() {
   useEffect(() => { void loadState(); }, [loadState]);
 
   const lock = useCallback(() => {
-    setPhase((current) => (current.kind === 'unlocked' ? { kind: 'locked', stored: current.stored } : current));
+    setPhase((current) => (
+      current.kind === 'unlocked' || current.kind === 'convert' ? { kind: 'locked', stored: current.stored } : current
+    ));
   }, []);
+
+  const unlocked = (stored: VaultKeyDTO, key: CryptoKey) => setPhase({ kind: 'unlocked', stored, key });
 
   return (
     <div className="space-y-6 pb-10">
@@ -68,7 +84,7 @@ export function VaultPage() {
         <div className="min-w-0 flex-1">
           <p className="text-xs uppercase tracking-wide text-emerald-300">Password vault</p>
           <h1 className="truncate text-2xl font-semibold">Your passwords</h1>
-          <p className="text-sm text-neutral-400">Encrypted on this device. Only your master password can open it.</p>
+          <p className="text-sm text-neutral-400">Encrypted on this device and unlocked with your {PIN_LENGTH}-digit PIN.</p>
         </div>
         {phase.kind === 'unlocked' && (
           <button type="button" onClick={lock} aria-label="Lock vault" className="flex min-h-11 shrink-0 touch-manipulation items-center gap-1.5 rounded-xl border border-white/20 px-3 text-sm font-semibold text-white hover:bg-white/10">
@@ -82,18 +98,22 @@ export function VaultPage() {
         <Notice>The password vault needs a secure (HTTPS) connection and a browser that supports Web Crypto.</Notice>
       )}
       {phase.kind === 'error' && <Notice>{phase.message}</Notice>}
-      {phase.kind === 'setup' && (
-        <SetupVault
-          onCreated={(stored, key) => setPhase({ kind: 'unlocked', stored, key })}
-          onAlreadyExists={loadState}
-        />
-      )}
-      {phase.kind === 'locked' && (
+      {phase.kind === 'setup' && <SetupVault onCreated={unlocked} onAlreadyExists={loadState} />}
+      {phase.kind === 'locked' && (phase.stored.scheme === 'PIN' ? (
         <UnlockVault
           stored={phase.stored}
-          onUnlocked={(key) => setPhase({ kind: 'unlocked', stored: phase.stored, key })}
+          onUnlocked={(key) => unlocked(phase.stored, key)}
           onReset={() => setPhase({ kind: 'setup' })}
         />
+      ) : (
+        <UnlockLegacyVault
+          stored={phase.stored}
+          onUnlocked={(key) => setPhase({ kind: 'convert', stored: phase.stored, key })}
+          onReset={() => setPhase({ kind: 'setup' })}
+        />
+      ))}
+      {phase.kind === 'convert' && (
+        <ConvertToPin stored={phase.stored} legacyKey={phase.key} onConverted={unlocked} onStale={loadState} />
       )}
       {phase.kind === 'unlocked' && (
         <UnlockedVault
@@ -102,7 +122,7 @@ export function VaultPage() {
           stored={phase.stored}
           cryptoKey={phase.key}
           onLock={lock}
-          onKeyChanged={(stored, key) => setPhase({ kind: 'unlocked', stored, key })}
+          onKeyChanged={unlocked}
           onStale={loadState}
         />
       )}
@@ -123,15 +143,13 @@ function SetupVault({ onCreated, onAlreadyExists }: {
     e.preventDefault();
     const form = e.currentTarget;
     const data = new FormData(form);
-    const password = String(data.get('password'));
-    if (password !== String(data.get('confirm'))) {
-      setError('The master passwords do not match.');
-      return;
-    }
+    const pin = String(data.get('pin'));
+    if (!isValidPin(pin)) return setError(`Your PIN must be exactly ${PIN_LENGTH} digits.`);
+    if (pin !== String(data.get('confirm'))) return setError('The PINs do not match.');
     setPending(true);
     setError(null);
     try {
-      const { key, material } = await createVaultKey(password);
+      const { key, material } = await createPinKey(pin);
       form.reset();
       onCreated(await api.vault.setup(material), key);
     } catch (err) {
@@ -146,23 +164,21 @@ function SetupVault({ onCreated, onAlreadyExists }: {
   }
 
   return (
-    <section className="mx-auto max-w-lg rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
+    <section className="mx-auto max-w-md rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
       <h2 className="text-lg font-semibold text-neutral-900">Create your vault</h2>
       <p className="mt-1 text-sm text-neutral-500">
-        Choose a master password to encrypt your vault. It is separate from your EntraSave sign-in and is never sent to our servers.
+        Choose a {PIN_LENGTH}-digit PIN to unlock your vault. It is separate from your EntraSave sign-in.
       </p>
       <form onSubmit={submit} className="mt-5 space-y-4">
-        <PasswordField name="password" label="Master password" autoComplete="new-password" minLength={MASTER_PASSWORD_MIN} maxLength={MASTER_PASSWORD_MAX} autoFocus />
-        <PasswordField name="confirm" label="Confirm master password" autoComplete="new-password" minLength={MASTER_PASSWORD_MIN} maxLength={MASTER_PASSWORD_MAX} />
-        <p className="text-xs text-neutral-400">At least {MASTER_PASSWORD_MIN} characters. A long passphrase you don't use anywhere else is best.</p>
+        <PinField name="pin" label="PIN" autoFocus />
+        <PinField name="confirm" label="Confirm PIN" />
+        <p className="text-xs text-neutral-400">After 5 incorrect PINs the vault locks, for longer after each further mistake.</p>
         <label className="flex items-start gap-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
           <input type="checkbox" required className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-600" />
-          <span>I understand that if I forget my master password, EntraSave cannot recover my vault. It can only be deleted.</span>
+          <span>I understand that if I forget my PIN, EntraSave cannot recover my vault. It can only be deleted.</span>
         </label>
         {error && <Notice>{error}</Notice>}
-        <button disabled={pending} className="min-h-11 w-full touch-manipulation rounded-xl bg-emerald-600 px-5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
-          {pending ? 'Creating vault…' : 'Create vault'}
-        </button>
+        <PrimaryButton pending={pending} pendingLabel="Creating vault…">Create vault</PrimaryButton>
       </form>
     </section>
   );
@@ -173,9 +189,48 @@ function UnlockVault({ stored, onUnlocked, onReset }: {
   onUnlocked: (key: CryptoKey) => void;
   onReset: () => void;
 }) {
+  const [error, setError] = useState<string | null>(lockedMessage(stored.lockedUntil));
+  const [pending, setPending] = useState(false);
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const pin = String(new FormData(form).get('pin'));
+    if (!isValidPin(pin)) return setError(`Enter your ${PIN_LENGTH}-digit PIN.`);
+    setPending(true);
+    setError(null);
+    try {
+      const prepared = await preparePin(pin, stored.kdfSalt, stored.kdfIterations);
+      const { secret } = await api.vault.unlock(prepared.pinProof);
+      const key = await prepared.deriveKey(secret);
+      form.reset();
+      onUnlocked(key);
+    } catch (err) {
+      form.reset();
+      setError(message(err, 'Could not unlock the vault in this browser.'));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <LockedCard title="Vault locked" description={`Enter your ${PIN_LENGTH}-digit PIN to view your saved passwords.`} forgotLabel="Forgot PIN?" onReset={onReset}>
+      <form onSubmit={submit} className="space-y-4">
+        <PinField name="pin" label="PIN" autoFocus />
+        {error && <Notice>{error}</Notice>}
+        <PrimaryButton pending={pending} pendingLabel="Unlocking…">Unlock</PrimaryButton>
+      </form>
+    </LockedCard>
+  );
+}
+
+function UnlockLegacyVault({ stored, onUnlocked, onReset }: {
+  stored: VaultKeyDTO;
+  onUnlocked: (key: CryptoKey) => void;
+  onReset: () => void;
+}) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [resetting, setResetting] = useState(false);
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -183,7 +238,7 @@ function UnlockVault({ stored, onUnlocked, onReset }: {
     setPending(true);
     setError(null);
     try {
-      const key = await unlockVaultKey(String(new FormData(form).get('password')), stored);
+      const key = await unlockLegacyVaultKey(String(new FormData(form).get('password')), stored);
       if (!key) {
         setError('Incorrect master password.');
         return;
@@ -198,18 +253,77 @@ function UnlockVault({ stored, onUnlocked, onReset }: {
   }
 
   return (
-    <section className="mx-auto max-w-md rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
-      <h2 className="text-lg font-semibold text-neutral-900">Vault locked</h2>
-      <p className="mt-1 text-sm text-neutral-500">Enter your master password to view your saved passwords.</p>
-      <form onSubmit={submit} className="mt-5 space-y-4">
-        <PasswordField name="password" label="Master password" autoComplete="off" maxLength={MASTER_PASSWORD_MAX} autoFocus />
+    <LockedCard title="Vault locked" description={`Enter your master password once more. You'll then set a ${PIN_LENGTH}-digit PIN to use from now on.`} forgotLabel="Forgot master password?" onReset={onReset}>
+      <form onSubmit={submit} className="space-y-4">
+        <PasswordField name="password" label="Master password" maxLength={LEGACY_PASSWORD_MAX} autoFocus />
         {error && <Notice>{error}</Notice>}
-        <button disabled={pending} className="min-h-11 w-full touch-manipulation rounded-xl bg-emerald-600 px-5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
-          {pending ? 'Unlocking…' : 'Unlock'}
-        </button>
+        <PrimaryButton pending={pending} pendingLabel="Unlocking…">Unlock</PrimaryButton>
       </form>
+    </LockedCard>
+  );
+}
+
+function ConvertToPin({ stored, legacyKey, onConverted, onStale }: {
+  stored: VaultKeyDTO;
+  legacyKey: CryptoKey;
+  onConverted: (stored: VaultKeyDTO, key: CryptoKey) => void;
+  onStale: () => Promise<void>;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const data = new FormData(e.currentTarget);
+    const pin = String(data.get('pin'));
+    if (!isValidPin(pin)) return setError(`Your PIN must be exactly ${PIN_LENGTH} digits.`);
+    if (pin !== String(data.get('confirm'))) return setError('The PINs do not match.');
+    setPending(true);
+    setError(null);
+    try {
+      const { key, material, items } = await reencryptVault(legacyKey, pin);
+      onConverted(await api.vault.rekey({ keyVersion: stored.keyVersion, ...material, items }), key);
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'CONFLICT') {
+        await onStale();
+        return;
+      }
+      setError(message(err, 'Failed to set your PIN.'));
+      setPending(false);
+    }
+  }
+
+  return (
+    <section className="mx-auto max-w-md rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
+      <h2 className="text-lg font-semibold text-neutral-900">Set your vault PIN</h2>
+      <p className="mt-1 text-sm text-neutral-500">
+        The vault now unlocks with a {PIN_LENGTH}-digit PIN instead of a master password. Your entries are re-encrypted with it.
+      </p>
+      <form onSubmit={submit} className="mt-5 space-y-4">
+        <PinField name="pin" label="New PIN" autoFocus />
+        <PinField name="confirm" label="Confirm PIN" />
+        {error && <Notice>{error}</Notice>}
+        <PrimaryButton pending={pending} pendingLabel="Re-encrypting…">Set PIN</PrimaryButton>
+      </form>
+    </section>
+  );
+}
+
+function LockedCard({ title, description, forgotLabel, onReset, children }: {
+  title: string;
+  description: string;
+  forgotLabel: string;
+  onReset: () => void;
+  children: ReactNode;
+}) {
+  const [resetting, setResetting] = useState(false);
+  return (
+    <section className="mx-auto max-w-md rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
+      <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
+      <p className="mt-1 text-sm text-neutral-500">{description}</p>
+      <div className="mt-5">{children}</div>
       <button type="button" onClick={() => setResetting(true)} className="mt-4 min-h-11 w-full touch-manipulation text-sm font-medium text-neutral-500 hover:text-rose-600">
-        Forgot master password?
+        {forgotLabel}
       </button>
       {resetting && <ResetVaultDialog onClose={() => setResetting(false)} onReset={onReset} />}
     </section>
@@ -235,7 +349,7 @@ function ResetVaultDialog({ onClose, onReset }: { onClose: () => void; onReset: 
   }
 
   return (
-    <Modal title="Delete vault" subtitle="Your master password cannot be recovered." onClose={onClose}>
+    <Modal title="Delete vault" subtitle="A forgotten PIN cannot be recovered." onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         <p className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">
           This permanently deletes every saved entry so you can start a new vault. This cannot be undone.
@@ -270,7 +384,7 @@ function UnlockedVault({ stored, cryptoKey, onLock, onKeyChanged, onStale }: {
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<VaultRow | 'new' | null>(null);
   const [deleting, setDeleting] = useState<VaultRow | null>(null);
-  const [changingPassword, setChangingPassword] = useState(false);
+  const [changingPin, setChangingPin] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -287,7 +401,7 @@ function UnlockedVault({ stored, cryptoKey, onLock, onKeyChanged, onStale }: {
   useEffect(() => { void load(); }, [load]);
   useIdleTimeout(AUTO_LOCK_MS, onLock);
 
-  // A CONFLICT on a write can mean the key changed in another session; re-read
+  // A CONFLICT on a write can mean the PIN changed in another session; re-read
   // the vault state so this tab locks instead of writing under a stale key.
   const handleWriteError = useCallback(async (err: unknown, fallback: string): Promise<string> => {
     if (err instanceof ApiError && err.code === 'CONFLICT') {
@@ -315,7 +429,7 @@ function UnlockedVault({ stored, cryptoKey, onLock, onKeyChanged, onStale }: {
           <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name, username, or website" className="min-h-11 w-full rounded-xl border border-neutral-300 bg-white py-2 pl-9 pr-3 text-neutral-900 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100" />
         </label>
         <div className="flex gap-2">
-          <button type="button" onClick={() => setChangingPassword(true)} className="min-h-11 flex-1 touch-manipulation rounded-xl border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 sm:flex-none">Change master password</button>
+          <button type="button" onClick={() => setChangingPin(true)} className="min-h-11 flex-1 touch-manipulation rounded-xl border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 sm:flex-none">Change PIN</button>
           <button type="button" onClick={() => setEditing('new')} className="min-h-11 flex-1 touch-manipulation rounded-xl bg-emerald-600 px-5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 sm:flex-none">+ Add entry</button>
         </div>
       </div>
@@ -363,11 +477,11 @@ function UnlockedVault({ stored, cryptoKey, onLock, onKeyChanged, onStale }: {
           onDeleted={async () => { setDeleting(null); await load(); }}
         />
       )}
-      {changingPassword && (
-        <ChangeMasterPasswordDialog
+      {changingPin && (
+        <ChangePinDialog
           stored={stored}
           cryptoKey={cryptoKey}
-          onClose={() => setChangingPassword(false)}
+          onClose={() => setChangingPin(false)}
           onChanged={onKeyChanged}
           onError={handleWriteError}
         />
@@ -377,6 +491,7 @@ function UnlockedVault({ stored, cryptoKey, onLock, onKeyChanged, onStale }: {
 }
 
 function VaultRowItem({ row, onEdit, onDelete }: { row: VaultRow; onEdit: () => void; onDelete: () => void }) {
+  const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState<'username' | 'password' | 'failed' | null>(null);
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -407,32 +522,59 @@ function VaultRowItem({ row, onEdit, onDelete }: { row: VaultRow; onEdit: () => 
   }
 
   const link = safeWebsiteUrl(entry.url);
-  const subtitle = [entry.username, link ? new URL(link).hostname : entry.url].filter(Boolean).join(' · ');
+  const site = link ? new URL(link).hostname : entry.url;
 
   return (
-    <li className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-5">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
+    <li className="px-4 py-3 sm:px-5">
+      <div className="flex items-center gap-3">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-50 text-sm font-semibold text-emerald-700">
           {(entry.name.trim().charAt(0) || '?').toUpperCase()}
         </span>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-neutral-800">{entry.name}</p>
-          <p className="truncate text-xs text-neutral-500">
-            {copied === 'username' ? 'Username copied' : copied === 'password' ? 'Password copied' : copied === 'failed' ? 'Copy failed' : subtitle || 'No username'}
-          </p>
+          {link ? (
+            <a href={link} target="_blank" rel="noopener noreferrer" className="block truncate text-xs text-emerald-700 hover:underline">{site}</a>
+          ) : site ? (
+            <p className="truncate text-xs text-neutral-500">{site}</p>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 items-center">
+          <IconButton label={`Edit ${entry.name}`} onClick={onEdit}><EditIcon /></IconButton>
+          <IconButton label={`Delete ${entry.name}`} onClick={onDelete} danger><TrashIcon /></IconButton>
         </div>
       </div>
-      <div className="flex shrink-0 items-center justify-end gap-0.5">
-        {entry.username && <IconButton label={`Copy username for ${entry.name}`} onClick={() => void copy('username', entry.username)}><UserIcon /></IconButton>}
-        {entry.password && <IconButton label={`Copy password for ${entry.name}`} onClick={() => void copy('password', entry.password)}><KeyIcon /></IconButton>}
-        {link && (
-          <a href={link} target="_blank" rel="noopener noreferrer" aria-label={`Open website for ${entry.name}`} title="Open website" className="grid min-h-11 min-w-11 touch-manipulation place-items-center rounded-lg text-neutral-400 hover:bg-neutral-100 hover:text-neutral-800 sm:min-h-9 sm:min-w-9">
-            <ExternalIcon />
-          </a>
-        )}
-        <IconButton label={`Edit ${entry.name}`} onClick={onEdit}><EditIcon /></IconButton>
-        <IconButton label={`Delete ${entry.name}`} onClick={onDelete} danger><TrashIcon /></IconButton>
-      </div>
+
+      <dl className="mt-2 space-y-1 rounded-xl bg-neutral-50 px-3 py-1.5 sm:ml-[52px]">
+        <div className="flex items-center gap-2">
+          <dt className="w-[4.5rem] shrink-0 text-xs text-neutral-500">Username</dt>
+          <dd className="min-w-0 flex-1 truncate text-sm text-neutral-800">{entry.username || <span className="text-neutral-400">—</span>}</dd>
+          {entry.username && (
+            <IconButton label={`Copy username for ${entry.name}`} onClick={() => void copy('username', entry.username)}>
+              {copied === 'username' ? <CheckIcon /> : <CopyIcon />}
+            </IconButton>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <dt className="w-[4.5rem] shrink-0 text-xs text-neutral-500">Password</dt>
+          <dd className={`min-w-0 flex-1 font-mono text-sm text-neutral-800 ${revealed ? 'break-all' : 'truncate'}`}>
+            {entry.password ? (revealed ? entry.password : MASK) : <span className="font-sans text-neutral-400">—</span>}
+          </dd>
+          {entry.password && (
+            <>
+              <IconButton label={revealed ? `Hide password for ${entry.name}` : `Show password for ${entry.name}`} onClick={() => setRevealed((v) => !v)}>
+                {revealed ? <EyeOffIcon /> : <EyeIcon />}
+              </IconButton>
+              <IconButton label={`Copy password for ${entry.name}`} onClick={() => void copy('password', entry.password)}>
+                {copied === 'password' ? <CheckIcon /> : <CopyIcon />}
+              </IconButton>
+            </>
+          )}
+        </div>
+      </dl>
+      <p role="status" className="sr-only">
+        {copied === 'username' ? 'Username copied' : copied === 'password' ? 'Password copied' : copied === 'failed' ? 'Copy failed' : ''}
+      </p>
+      {copied === 'failed' && <p className="mt-1 text-xs text-rose-600 sm:ml-[52px]">Copy failed. Your browser blocked clipboard access.</p>}
     </li>
   );
 }
@@ -555,7 +697,7 @@ function DeleteEntryDialog({ row, onClose, onDeleted }: { row: VaultRow; onClose
   );
 }
 
-function ChangeMasterPasswordDialog({ stored, cryptoKey, onClose, onChanged, onError }: {
+function ChangePinDialog({ stored, cryptoKey, onClose, onChanged, onError }: {
   stored: VaultKeyDTO;
   cryptoKey: CryptoKey;
   onClose: () => void;
@@ -568,50 +710,33 @@ function ChangeMasterPasswordDialog({ stored, cryptoKey, onClose, onChanged, onE
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
+    const current = String(data.get('current'));
     const next = String(data.get('next'));
-    if (next !== String(data.get('confirm'))) {
-      setError('The new master passwords do not match.');
-      return;
-    }
+    if (!isValidPin(current) || !isValidPin(next)) return setError(`PINs must be exactly ${PIN_LENGTH} digits.`);
+    if (next !== String(data.get('confirm'))) return setError('The new PINs do not match.');
     setPending(true);
     setError(null);
     try {
-      // Re-confirm the current password before re-encrypting everything.
-      if (!(await unlockVaultKey(String(data.get('current')), stored))) {
-        setError('Your current master password is incorrect.');
-        setPending(false);
-        return;
-      }
-      const rows = await decryptAll(cryptoKey, await api.vault.list());
-      const readable = rows.flatMap((row) => (row.entry ? [{ id: row.id, entry: row.entry }] : []));
-      if (readable.length !== rows.length) {
-        setError('Delete unreadable entries before changing your master password.');
-        setPending(false);
-        return;
-      }
-      const { key, material } = await createVaultKey(next);
-      const items = await Promise.all(readable.map(async (row) => ({
-        id: row.id,
-        ...(await encryptEntry(key, row.entry)),
-      })));
-      const updated = await api.vault.rekey({ keyVersion: stored.keyVersion, ...material, items });
-      onChanged(updated, key);
+      // The server verifies the current PIN (counted toward the lockout).
+      const { pinProof: currentPinProof } = await preparePin(current, stored.kdfSalt, stored.kdfIterations);
+      const { key, material, items } = await reencryptVault(cryptoKey, next);
+      onChanged(await api.vault.rekey({ keyVersion: stored.keyVersion, ...material, currentPinProof, items }), key);
     } catch (err) {
-      setError(await onError(err, 'Failed to change your master password.'));
+      setError(await onError(err, 'Failed to change your PIN.'));
       setPending(false);
     }
   }
 
   return (
-    <Modal title="Change master password" subtitle="Every entry is re-encrypted with your new password." onClose={onClose}>
+    <Modal title="Change PIN" subtitle="Every entry is re-encrypted with your new PIN." onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
-        <PasswordField name="current" label="Current master password" autoComplete="off" maxLength={MASTER_PASSWORD_MAX} autoFocus />
-        <PasswordField name="next" label="New master password" autoComplete="new-password" minLength={MASTER_PASSWORD_MIN} maxLength={MASTER_PASSWORD_MAX} />
-        <PasswordField name="confirm" label="Confirm new master password" autoComplete="new-password" minLength={MASTER_PASSWORD_MIN} maxLength={MASTER_PASSWORD_MAX} />
+        <PinField name="current" label="Current PIN" autoFocus />
+        <PinField name="next" label="New PIN" />
+        <PinField name="confirm" label="Confirm new PIN" />
         {error && <Notice>{error}</Notice>}
         <DialogActions onCancel={onClose} pending={pending}>
           <button disabled={pending} className="min-h-11 rounded-xl bg-emerald-600 px-5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
-            {pending ? 'Re-encrypting…' : 'Change password'}
+            {pending ? 'Re-encrypting…' : 'Change PIN'}
           </button>
         </DialogActions>
       </form>
@@ -629,6 +754,16 @@ async function decryptAll(key: CryptoKey, items: VaultItemDTO[]): Promise<VaultR
       return { id: item.id, entry: null };
     }
   }));
+}
+
+/** Decrypt every entry with `oldKey` and re-encrypt it under a new PIN key. */
+async function reencryptVault(oldKey: CryptoKey, pin: string) {
+  const rows = await decryptAll(oldKey, await api.vault.list());
+  const readable = rows.flatMap((row) => (row.entry ? [{ id: row.id, entry: row.entry }] : []));
+  if (readable.length !== rows.length) throw new UnreadableEntriesError();
+  const { key, material } = await createPinKey(pin);
+  const items = await Promise.all(readable.map(async (row) => ({ id: row.id, ...(await encryptEntry(key, row.entry)) })));
+  return { key, material, items };
 }
 
 /** Lock after `ms` without pointer, keyboard, or scroll activity. */
@@ -663,20 +798,51 @@ function safeWebsiteUrl(value: string): string | null {
   }
 }
 
+function lockedMessage(lockedUntil: string | null): string | null {
+  if (!lockedUntil) return null;
+  const minutes = Math.max(1, Math.ceil((new Date(lockedUntil).getTime() - Date.now()) / 60_000));
+  const hours = Math.ceil(minutes / 60);
+  const wait = minutes < 60 ? `${minutes} minute${minutes === 1 ? '' : 's'}` : `${hours} hour${hours === 1 ? '' : 's'}`;
+  return `Too many incorrect PINs. Try again in ${wait}.`;
+}
+
 function message(error: unknown, fallback: string): string {
-  return error instanceof ApiError ? error.message : fallback;
+  return error instanceof ApiError || error instanceof UnreadableEntriesError ? error.message : fallback;
 }
 
 const inputClass = 'mt-1.5 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100';
 
-function PasswordField({ name, label, autoComplete, minLength, maxLength, autoFocus }: {
-  name: string;
-  label: string;
-  autoComplete: string;
-  minLength?: number;
-  maxLength: number;
-  autoFocus?: boolean;
-}) {
+function PinField({ name, label, autoFocus }: { name: string; label: string; autoFocus?: boolean }) {
+  const [revealed, setRevealed] = useState(false);
+  const id = `vault-${name}`;
+  return (
+    <div>
+      <label htmlFor={id} className="block text-sm font-medium text-neutral-700">{label}</label>
+      <div className="mt-1.5 flex gap-2">
+        <input
+          id={id}
+          name={name}
+          type={revealed ? 'text' : 'password'}
+          inputMode="numeric"
+          pattern={`[0-9]{${PIN_LENGTH}}`}
+          minLength={PIN_LENGTH}
+          maxLength={PIN_LENGTH}
+          required
+          title={`${PIN_LENGTH} digits`}
+          autoComplete="off"
+          autoFocus={autoFocus}
+          onInput={(e) => { e.currentTarget.value = e.currentTarget.value.replace(/\D/g, '').slice(0, PIN_LENGTH); }}
+          className="min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-center font-mono text-lg tracking-[0.5em] text-neutral-900 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+        />
+        <IconButton label={revealed ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`} onClick={() => setRevealed((v) => !v)} bordered>
+          {revealed ? <EyeOffIcon /> : <EyeIcon />}
+        </IconButton>
+      </div>
+    </div>
+  );
+}
+
+function PasswordField({ name, label, maxLength, autoFocus }: { name: string; label: string; maxLength: number; autoFocus?: boolean }) {
   const [revealed, setRevealed] = useState(false);
   const id = `vault-${name}`;
   return (
@@ -688,9 +854,8 @@ function PasswordField({ name, label, autoComplete, minLength, maxLength, autoFo
           name={name}
           type={revealed ? 'text' : 'password'}
           required
-          minLength={minLength}
           maxLength={maxLength}
-          autoComplete={autoComplete}
+          autoComplete="off"
           autoFocus={autoFocus}
           autoCapitalize="none"
           spellCheck={false}
@@ -701,6 +866,14 @@ function PasswordField({ name, label, autoComplete, minLength, maxLength, autoFo
         </IconButton>
       </div>
     </div>
+  );
+}
+
+function PrimaryButton({ pending, pendingLabel, children }: { pending: boolean; pendingLabel: string; children: ReactNode }) {
+  return (
+    <button disabled={pending} className="min-h-11 w-full touch-manipulation rounded-xl bg-emerald-600 px-5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
+      {pending ? pendingLabel : children}
+    </button>
   );
 }
 
@@ -739,9 +912,8 @@ function IconButton({ label, onClick, danger, bordered, children }: {
 
 function LockIcon({ className = 'h-4 w-4' }: { className?: string }) { return <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" rx="2" /><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" /></svg>; }
 function SearchIcon({ className }: { className?: string }) { return <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>; }
-function UserIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 20a8 8 0 0 1 16 0" /></svg>; }
-function KeyIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="8" cy="15" r="4" /><path d="m11 12 9-9m-3 3 3 3m-6 0 2 2" /></svg>; }
-function ExternalIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>; }
+function CopyIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a1 1 0 0 1 1-1h10" /></svg>; }
+function CheckIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4 text-emerald-600" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>; }
 function EditIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m4 20 4.2-1 10.9-10.9a2.1 2.1 0 0 0-3-3L5.2 16 4 20Z" /><path d="m14.5 6.5 3 3" /></svg>; }
 function TrashIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" /></svg>; }
 function EyeIcon() { return <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>; }

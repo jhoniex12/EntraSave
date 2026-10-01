@@ -36,7 +36,8 @@ export const RATE_LIMITS = {
   'budget.read': { limit: 120, windowMs: 60_000 },
   'vault.read': { limit: 120, windowMs: 60_000 },
   'vault.write': { limit: 60, windowMs: 60_000 },
-  // Key setup, master-password change, and vault reset.
+  'vault.unlock': { limit: 20, windowMs: 15 * 60_000 },
+  // Vault setup, PIN change, and vault reset.
   'vault.key': { limit: 10, windowMs: 60 * 60_000 },
   'auth.signin': { limit: 10, windowMs: 15 * 60_000 },
   'auth.signup': { limit: 5, windowMs: 60 * 60_000 },
